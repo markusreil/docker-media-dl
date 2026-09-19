@@ -5,50 +5,33 @@ name: media-dl
 # required variable is missing or empty.
 
 # --- Hostname scheme -------------------------------------------------------
-# Every service is published via nginx-proxy at <service>.<DOMAIN>, where
-# DOMAIN comes from .env (e.g. localhost or media-dl.localhost). The anchors
+# Every service is published via nginx-proxy at <service>.<BASE_DOMAIN>, where
+# BASE_DOMAIN comes from .env (e.g. localhost or media-dl.localhost). The anchors
 # below are the single source of truth for those hostnames; services
-# reference them with *sabnzbd-host / *prowlarr-host for VIRTUAL_HOST,
-# LETSENCRYPT_HOST and any app-level hostname setting. Change DOMAIN in .env
-# and the whole stack moves at once.
+# reference them with *prowlarr-host / *qbittorrent-host / *sabnzbd-host for
+# VIRTUAL_HOST, LETSENCRYPT_HOST and any app-level hostname setting. Change
+# BASE_DOMAIN in .env and the whole stack moves at once.
 x-hosts:
-  sabnzbd: &sabnzbd-host sabnzbd.${DOMAIN:?DOMAIN is required (see .env)}
-  prowlarr: &prowlarr-host prowlarr.${DOMAIN:?DOMAIN is required}
+  prowlarr: &prowlarr-host prowlarr.${BASE_DOMAIN:?BASE_DOMAIN is required}
+  # Scheme-prefixed public URLs derived from the same anchors, used only by the
+  # Homepage dashboard labels (homepage.href) below.
+  prowlarr-href: &prowlarr-href "http://prowlarr.${BASE_DOMAIN}"
+  qbittorrent: &qbittorrent-host qbittorrent.${BASE_DOMAIN:?BASE_DOMAIN is required}
+  qbittorrent-href: &qbittorrent-href "http://qbittorrent.${BASE_DOMAIN}"
+  # qBittorrent's ServerDomains extras, hardcoded (not env-configurable): the
+  # service name (so containers can use http://qbittorrent:8085) plus the
+  # public hostname. Semicolon-separated to match WebUI\ServerDomains format.
+  # Merged with QBT_HOST and de-duplicated in the entrypoint.
+  qbittorrent-whitelist: &qbittorrent-whitelist "qbittorrent;qbittorrent.${BASE_DOMAIN}"
+  sabnzbd: &sabnzbd-host sabnzbd.${BASE_DOMAIN:?BASE_DOMAIN is required (see .env)}
+  sabnzbd-href: &sabnzbd-href "http://sabnzbd.${BASE_DOMAIN}"
+  # SABnzbd's host_whitelist extras, hardcoded (not env-configurable): the
+  # service name (so containers can use http://sabnzbd:8080) plus the public
+  # hostname, making the whitelist robust even if SABNZBD_HOST is ever unset.
+  # Merged with SABNZBD_HOST and de-duplicated in the entrypoint.
+  sabnzbd-whitelist: &sabnzbd-whitelist "sabnzbd, sabnzbd.${BASE_DOMAIN}"
 
 services:
-  sabnzbd:
-    build:
-      context: ./sabnzbd
-      args:
-        SABNZBD_VERSION: ${SABNZBD_VERSION:?SABNZBD_VERSION is required (see .env)}
-    image: media-dl/sabnzbd:${SABNZBD_VERSION:?SABNZBD_VERSION is required}
-    container_name: sabnzbd
-    restart: unless-stopped
-    environment:
-      PUID: ${PUID:?PUID is required}
-      PGID: ${PGID:?PGID is required}
-      TZ: ${TZ:?TZ is required}
-      VIRTUAL_HOST: *sabnzbd-host
-      VIRTUAL_PORT: "8080"
-      LETSENCRYPT_HOST: *sabnzbd-host
-      LETSENCRYPT_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
-      # Seeded into [misc] host_whitelist on first start so SABnzbd accepts
-      # requests for the public hostname forwarded by nginx-proxy.
-      SABNZBD_HOST: *sabnzbd-host
-      # Extra accepted Host headers (default: the service name, so other
-      # containers can use http://sabnzbd:8080).
-      SABNZBD_HOST_WHITELIST: ${SABNZBD_HOST_WHITELIST:-sabnzbd}
-      # Seeded into the config on first start and shared with other services.
-      SABNZBD_API_KEY: ${SABNZBD_API_KEY:?SABNZBD_API_KEY is required (see .env)}
-      SABNZBD_NZB_KEY: ${SABNZBD_NZB_KEY:-}
-    volumes:
-      - sabnzbd-config:/config
-      - sabnzbd-data:/data
-    expose:
-      - "8080"
-    networks:
-      - nginx-proxy
-
   prowlarr:
     build:
       context: ./prowlarr
@@ -69,10 +52,119 @@ services:
       # stable API key instead of scraping the auto-generated one. Also used
       # by the container healthcheck.
       PROWLARR_API_KEY: ${PROWLARR_API_KEY:?PROWLARR_API_KEY is required (see .env)}
+    # Homepage (gethomepage.dev) auto-discovery labels.
+    labels:
+      homepage.group: Media
+      homepage.name: Prowlarr
+      homepage.icon: prowlarr
+      homepage.href: *prowlarr-href
+      homepage.description: Indexer manager
+      homepage.widget.type: prowlarr
+      homepage.widget.url: "http://prowlarr:9696"
+      homepage.widget.key: ${PROWLARR_API_KEY:?PROWLARR_API_KEY is required (see .env)}
     volumes:
       - prowlarr-config:/config
     expose:
       - "9696"
+    networks:
+      - nginx-proxy
+
+  qbittorrent:
+    build:
+      context: ./qbittorrent
+      args:
+        QBT_VERSION: ${QBT_VERSION:?QBT_VERSION is required (see .env)}
+    image: media-dl/qbittorrent:${QBT_VERSION:?QBT_VERSION is required}
+    container_name: qbittorrent
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:?PUID is required}
+      PGID: ${PGID:?PGID is required}
+      TZ: ${TZ:?TZ is required}
+      VIRTUAL_HOST: *qbittorrent-host
+      VIRTUAL_PORT: "8085"
+      LETSENCRYPT_HOST: *qbittorrent-host
+      LETSENCRYPT_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      # Seeded into [Preferences] WebUI\ServerDomains on first start so the
+      # public hostname forwarded by nginx-proxy is accepted (anti-DNS-rebinding).
+      QBT_HOST: *qbittorrent-host
+      # Extra accepted Host headers, hardcoded: the service name (so other
+      # containers can use http://qbittorrent:8085) plus the public hostname.
+      QBT_HOST_WHITELIST: *qbittorrent-whitelist
+      # Optional: CIDR subnets that bypass the WebUI login (e.g. the docker
+      # network nginx-proxy attaches to). Empty = login always required.
+      QBT_AUTH_SUBNET_WHITELIST: ${QBT_AUTH_SUBNET_WHITELIST:-}
+      # WebUI login. qBittorrent has no anonymous mode and no env-var override
+      # for its credentials, so these are seeded (PBKDF2-hashed) into the
+      # config on first start.
+      QBT_WEBUI_USERNAME: ${QBT_WEBUI_USERNAME:-admin}
+      QBT_WEBUI_PASSWORD: ${QBT_WEBUI_PASSWORD:?QBT_WEBUI_PASSWORD is required (see .env)}
+    # Homepage (gethomepage.dev) auto-discovery labels.
+    labels:
+      homepage.group: Media
+      homepage.name: qBittorrent
+      homepage.icon: qbittorrent
+      homepage.href: *qbittorrent-href
+      homepage.description: BitTorrent client
+      homepage.widget.type: qbittorrent
+      homepage.widget.url: "http://qbittorrent:8085"
+      homepage.widget.username: ${QBT_WEBUI_USERNAME:-admin}
+      homepage.widget.password: ${QBT_WEBUI_PASSWORD:?QBT_WEBUI_PASSWORD is required (see .env)}
+    volumes:
+      - qbittorrent-config:/config
+      - qbittorrent-data:/data
+    expose:
+      - "8085"
+    # Only host ports in the stack: bittorrent peer traffic (TCP+UDP).
+    # QBT_BT_PORT is the host port; the container always listens on 6881.
+    ports:
+      - "${QBT_BT_PORT:-6881}:6881/tcp"
+      - "${QBT_BT_PORT:-6881}:6881/udp"
+    networks:
+      - nginx-proxy
+
+  sabnzbd:
+    build:
+      context: ./sabnzbd
+      args:
+        SABNZBD_VERSION: ${SABNZBD_VERSION:?SABNZBD_VERSION is required (see .env)}
+    image: media-dl/sabnzbd:${SABNZBD_VERSION:?SABNZBD_VERSION is required}
+    container_name: sabnzbd
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:?PUID is required}
+      PGID: ${PGID:?PGID is required}
+      TZ: ${TZ:?TZ is required}
+      VIRTUAL_HOST: *sabnzbd-host
+      VIRTUAL_PORT: "8080"
+      LETSENCRYPT_HOST: *sabnzbd-host
+      LETSENCRYPT_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      # Seeded into [misc] host_whitelist on first start so SABnzbd accepts
+      # requests for the public hostname forwarded by nginx-proxy.
+      SABNZBD_HOST: *sabnzbd-host
+      # Extra accepted Host headers, hardcoded: the service name (so other
+      # containers can use http://sabnzbd:8080) plus the public hostname.
+      SABNZBD_HOST_WHITELIST: *sabnzbd-whitelist
+      # Seeded into the config on first start and shared with other services.
+      SABNZBD_API_KEY: ${SABNZBD_API_KEY:?SABNZBD_API_KEY is required (see .env)}
+      SABNZBD_NZB_KEY: ${SABNZBD_NZB_KEY:-}
+    # Homepage (gethomepage.dev) auto-discovery labels. href is the public URL
+    # (what the browser opens); homepage.widget.url is the internal docker-network
+    # URL because Homepage fetches widget data server-side.
+    labels:
+      homepage.group: Media
+      homepage.name: SABnzbd
+      homepage.icon: sabnzbd
+      homepage.href: *sabnzbd-href
+      homepage.description: Usenet downloader
+      homepage.widget.type: sabnzbd
+      homepage.widget.url: "http://sabnzbd:8080"
+      homepage.widget.key: ${SABNZBD_API_KEY:?SABNZBD_API_KEY is required (see .env)}
+    volumes:
+      - sabnzbd-config:/config
+      - sabnzbd-data:/data
+    expose:
+      - "8080"
     networks:
       - nginx-proxy
 
@@ -85,3 +177,5 @@ volumes:
   sabnzbd-config:
   sabnzbd-data:
   prowlarr-config:
+  qbittorrent-config:
+  qbittorrent-data:

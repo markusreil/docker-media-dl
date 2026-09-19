@@ -30,8 +30,8 @@ docker compose build prowlarr
 
 The container does not publish ports to the host. It joins the external
 `nginx-proxy` network and is reached through the existing `nginx-proxy` /
-Let's Encrypt sidecar using `VIRTUAL_HOST` — at `prowlarr.<DOMAIN>` (see
-`DOMAIN` in `.env`).
+Let's Encrypt sidecar using `VIRTUAL_HOST` — at `prowlarr.<BASE_DOMAIN>` (see
+`BASE_DOMAIN` in `.env`).
 
 ### Environment variables
 
@@ -39,7 +39,7 @@ Let's Encrypt sidecar using `VIRTUAL_HOST` — at `prowlarr.<DOMAIN>` (see
 | --- | --- |
 | `PUID` / `PGID` | UID/GID that files and the process run as (default `1000:1000`) |
 | `TZ` | Container timezone |
-| `VIRTUAL_HOST` | Public hostname routed by nginx-proxy (`prowlarr.<DOMAIN>`) |
+| `VIRTUAL_HOST` | Public hostname routed by nginx-proxy (`prowlarr.<BASE_DOMAIN>`) |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`9696`) |
 | `LETSENCRYPT_HOST` / `LETSENCRYPT_EMAIL` | Certificate request details |
 | `PROWLARR_API_KEY` | API key (access token), seeded into `config.xml` on first start, shared with other services, and used by the container healthcheck (required) |
@@ -84,9 +84,9 @@ a minimal config:
 
 ### Through nginx-proxy (UI + API)
 
-nginx-proxy routes `prowlarr.<DOMAIN>` to the container. The UI is available
-at `https://prowlarr.<DOMAIN>`; the API at
-`https://prowlarr.<DOMAIN>/api/v1/<...>` with `X-Api-Key: <PROWLARR_API_KEY>`.
+nginx-proxy routes `prowlarr.<BASE_DOMAIN>` to the container. The UI is available
+at `https://prowlarr.<BASE_DOMAIN>`; the API at
+`https://prowlarr.<BASE_DOMAIN>/api/v1/<...>` with `X-Api-Key: <PROWLARR_API_KEY>`.
 
 ### Direct container-to-container (API)
 

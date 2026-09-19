@@ -22,20 +22,24 @@ if [ "$(id -u)" = "0" ]; then
     # paths must pass this check:
     #   * nginx-proxy forwards the public Host header -> SABNZBD_HOST
     #   * other containers use http://sabnzbd:8080  -> SABNZBD_HOST_WHITELIST
-    #                                                       (default: "sabnzbd")
+    #     (hardcoded in docker-compose.yml: "sabnzbd, sabnzbd.<BASE_DOMAIN>")
     # The API/NZB keys are seeded too (when provided) so downstream containers
     # share a stable credential instead of scraping the generated key.
     # See README.md.
     if [ ! -f /config/sabnzbd.ini ]; then
+        # host_whitelist = <SABNZBD_HOST>, <SABNZBD_HOST_WHITELIST>, merged with
+        # duplicates removed. The extras overlap with SABNZBD_HOST by design (the
+        # public hostname appears in both) so the list stays de-duplicated.
         whitelist="${SABNZBD_HOST:-}"
-        extras="${SABNZBD_HOST_WHITELIST:-sabnzbd}"
-        if [ -n "$extras" ]; then
-            if [ -n "$whitelist" ]; then
-                whitelist="$whitelist, $extras"
-            else
-                whitelist="$extras"
-            fi
-        fi
+        # shellcheck disable=SC2086 # intentional word splitting on the CSV
+        for entry in $(printf '%s' "${SABNZBD_HOST_WHITELIST:-sabnzbd}" | tr ',' ' '); do
+            # Match whole tokens only (entry followed by "," or end-of-list
+            # i.e. a space here) so "sabnzbd" never masks "sabnzbd.<domain>".
+            case " $whitelist " in
+                *" $entry,"*|*" $entry "*) ;;
+                *) whitelist="${whitelist:+$whitelist, }$entry" ;;
+            esac
+        done
 
         {
             echo '[misc]'

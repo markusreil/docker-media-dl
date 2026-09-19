@@ -26,17 +26,18 @@ Services:
 
 | Service | Role | Public hostname | Internal port |
 | --- | --- | --- | --- |
-| `sabnzbd` | Usenet downloader | `sabnzbd.<DOMAIN>` | 8080 |
-| `prowlarr` | Indexer manager | `prowlarr.<DOMAIN>` | 9696 |
+| `sabnzbd` | Usenet downloader | `sabnzbd.<BASE_DOMAIN>` | 8080 |
+| `prowlarr` | Indexer manager | `prowlarr.<BASE_DOMAIN>` | 9696 |
+| `qbittorrent` | BitTorrent client | `qbittorrent.<BASE_DOMAIN>` | 8085 |
 
 ## Layout
 
 ```
 docker-compose.yml     single compose file (services, hosts, networks, volumes)
-.env                   all configuration (secrets) — tracked in git
-.env.example           template; copy to .env first
+.env                   all configuration (secrets, defaults, comments) — tracked in git
 sabnzbd/               Alpine SABnzbd image: Dockerfile, entrypoint.sh, README
 prowlarr/              Alpine Prowlarr image: Dockerfile, entrypoint.sh, README
+qbittorrent/           Alpine qBittorrent image: Dockerfile, entrypoint.sh, README
 ```
 
 Each service directory has a README with build details, environment variables,
@@ -49,7 +50,7 @@ To scaffold a NEW compose project from scratch, follow
 ## Build / run / verify
 
 ```sh
-cp .env.example .env   # then edit .env
+# edit .env first (there is no .env.example — defaults and comments live in .env)
 docker compose config  # sanity check; fails fast on missing vars
 docker compose build
 docker compose up -d
@@ -59,7 +60,7 @@ docker compose ps
 To update a service after bumping its version variable in `.env`:
 
 ```sh
-docker compose build sabnzbd prowlarr
+docker compose build sabnzbd prowlarr qbittorrent
 docker compose up -d
 ```
 
@@ -74,14 +75,19 @@ and serve their UIs.
   compose errors out on missing/empty values. Never replace these with silent
   defaults for required config (secrets, versions, domain, proxy network).
 * **Hostnames are anchored once.** `x-hosts` at the top of
-  `docker-compose.yml` defines `sabnzbd.${DOMAIN}` and `prowlarr.${DOMAIN}`;
+  `docker-compose.yml` defines `sabnzbd.${BASE_DOMAIN}` and `prowlarr.${BASE_DOMAIN}`;
   both services reference the anchors via `*sabnzbd-host` / `*prowlarr-host`
-  for `VIRTUAL_HOST`, `LETSENCRYPT_HOST`, and app-level hostname env vars.
-  Changing `DOMAIN` in `.env` moves the whole stack. Keep adding new services
-  on the same pattern.
+  for `VIRTUAL_HOST`, `LETSENCRYPT_HOST`, and app-level hostname env vars; the
+  derived `*-href` URL anchors feed the Homepage dashboard labels
+  (`homepage.href`). Changing `BASE_DOMAIN` in `.env` moves the whole stack. Keep
+  adding new services on the same pattern.
 * **Services attach to an external network**, `nginx-proxy` (name from
-  `NGINX_PROXY_NETWORK`), and publish only via `expose` — no host ports.
-* **Both images are built from source in this repo** on Alpine. No
+  `NGINX_PROXY_NETWORK`), and publish only via `expose` — no host ports. The
+  single exception is qbittorrent, which publishes the bittorrent peer port
+  (`QBT_BT_PORT`, default 6881, TCP+UDP) to the host for inbound connections;
+  that is the stack's only host-port exception.
+* **Both images are built from source in this repo** on Alpine; qBittorrent is
+  installed from the Alpine community package `qbittorrent-nox`. No
   LinuxServer/third-party images; that is a deliberate spec choice.
 * **Entrypoints are write-once config seeders.** Each `entrypoint.sh` seeds a
   minimal config on FIRST start only (`if [ ! -f ... ]`), and never overwrites
@@ -96,6 +102,9 @@ and serve their UIs.
   running user).
 * **`.env` is tracked in git** in this repo. Do not "help" by gitignoring it
   or by committing secrets elsewhere.
+* **There is no `.env.example`** — it does not exist in this repo. Defaults
+  and comments go directly into `.env`; it is the real, tracked configuration
+  file and the source of truth for variables, defaults, and documentation.
 
 ## SABnzbd specifics (`sabnzbd/`)
 
@@ -106,9 +115,11 @@ and serve their UIs.
   `complete`.
 * **DNS-rebinding protection**: SABnzbd rejects requests whose `Host` header is
   not localhost, an IP, `*.local`, or in `host_whitelist`. Two paths must pass:
-  the public hostname forwarded by nginx-proxy (`SABNZBD_HOST`, seeded) and the
-  internal `http://sabnzbd:8080` name used by other containers
-  (`SABNZBD_HOST_WHITELIST`, defaults to `sabnzbd`).
+  the public hostname forwarded by nginx-proxy (`SABNZBD_HOST`) and the
+  internal `http://sabnzbd:8080` name used by other containers. The entrypoint
+  seeds `host_whitelist` from `SABNZBD_HOST` merged with the hardcoded
+  `SABNZBD_HOST_WHITELIST` in compose (`sabnzbd, sabnzbd.<BASE_DOMAIN>`),
+  de-duplicated so the public hostname appears once.
 * `SABNZBD_API_KEY` / `SABNZBD_NZB_KEY` are seeded when provided so downstream
   containers share stable credentials.
 * LAN-only posture: SABnzbd rejects non-private client IPs with 403 by design;
@@ -134,6 +145,36 @@ and serve their UIs.
 * If changing these values, confirm behavior against the actual Prowlarr
   release used, not docs alone.
 
+## qBittorrent specifics (`qbittorrent/`)
+
+* No env-var/CLI override exists for WebUI credentials, so the entrypoint seeds
+  `WebUI\Username` and `WebUI\Password_PBKDF2` into
+  `config/qBittorrent/config/qBittorrent.conf` (config lives under the
+  `config/` subdir of the profile dir — verified empirically on 5.2.1).
+* `WebUI\Password_PBKDF2` format = `"@ByteArray(<b64salt>:<b64hash>)"` with
+  PBKDF2-HMAC-SHA512 (16-byte salt, 100000 iterations, 64-byte key), generated
+  in the entrypoint with python3; matches what qBittorrent itself writes.
+* INI keys use single backslashes (`WebUI\Port`); double backslashes break key
+  matching (QSettings) — do not "fix" the escaping.
+* qBittorrent has NO anonymous/no-login mode (unlike SABnzbd/Prowlarr) — by
+  default login is always required; the stack uses seeded `QBT_WEBUI_USERNAME` /
+  `QBT_WEBUI_PASSWORD`. The one deliberate exception is `QBT_AUTH_SUBNET_WHITELIST`
+  (CIDR list, default empty): when set, the entrypoint seeds
+  `WebUI\AuthSubnetWhitelistEnabled=true` so clients from those subnets skip
+  login. It is checked against the socket peer IP (not `X-Forwarded-For`), so
+  only genuinely on-subnet clients are affected; set it to the `NGINX_PROXY_NETWORK`
+  subnet to open the WebUI behind the proxy.
+* `WebUI\HostHeaderValidation=true` stays on; `WebUI\ServerDomains` is seeded
+  with the public hostname merged with the hardcoded `QBT_HOST_WHITELIST` in
+  compose (`qbittorrent;qbittorrent.<BASE_DOMAIN>`), de-duplicated
+  (SABnzbd-style anti-DNS-rebinding).
+* `WebUI\Port=8085` (internal), `BitTorrent\Session\Port=6881` (fixed internal
+  peer port); host peer port `QBT_BT_PORT` is published as
+  `${QBT_BT_PORT}:6881` — `QBT_BT_PORT` is only the host-side port, the
+  container always listens on 6881.
+* Healthcheck `GET /` returns 200 unauthenticated.
+* Write-once seeding, same reseed procedure as the other services.
+
 ## Testing / review checklist
 
 Before finishing a change:
@@ -141,7 +182,8 @@ Before finishing a change:
 1. `docker compose config` passes with a fresh `.env` copy.
 2. Variable interpolation still fails fast on missing vars (no silent
    defaults for required ones).
-3. New/changed env vars are documented in `.env.example`, `README.md`, and the
-   service README.
+3. New/changed env vars are documented in `.env` (with defaults and comments)
+   and in `README.md` / the service README. There is no `.env.example` to
+   update.
 4. Seeding logic only runs on first start; existing configs are untouched.
 5. `PUID`/`PGID` chown behavior is preserved (no recursive chown on `/data`).

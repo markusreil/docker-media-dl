@@ -43,11 +43,11 @@ Let's Encrypt sidecar using `VIRTUAL_HOST`.
 | --- | --- |
 | `PUID` / `PGID` | UID/GID that files and the process run as (default `1000:1000`) |
 | `TZ` | Container timezone |
-| `VIRTUAL_HOST` | Public hostname routed by nginx-proxy, derived from `DOMAIN` in `.env` as `sabnzbd.<DOMAIN>` |
+| `VIRTUAL_HOST` | Public hostname routed by nginx-proxy, derived from `BASE_DOMAIN` in `.env` as `sabnzbd.<BASE_DOMAIN>` |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`8080`) |
 | `LETSENCRYPT_HOST` / `LETSENCRYPT_EMAIL` | Certificate request details |
-| `SABNZBD_HOST` | Public hostname (`sabnzbd.<DOMAIN>`), seeded into `host_whitelist` on first run |
-| `SABNZBD_HOST_WHITELIST` | Extra accepted Host headers (default `sabnzbd`), seeded into `host_whitelist` |
+| `SABNZBD_HOST` | Public hostname (`sabnzbd.<BASE_DOMAIN>`), seeded into `host_whitelist` on first run |
+| `SABNZBD_HOST_WHITELIST` | Extra accepted Host headers, hardcoded in compose as `sabnzbd, sabnzbd.<BASE_DOMAIN>` |
 | `SABNZBD_API_KEY` | API key (access token), seeded into `api_key` and shared with other services |
 | `SABNZBD_NZB_KEY` | NZB key for direct download links, seeded into `nzb_key` (optional) |
 
@@ -61,13 +61,15 @@ minimal config:
 download_dir = /data/incomplete
 complete_dir = /data/complete
 backup_dir = /data/backup
-host_whitelist = <SABNZBD_HOST>, <SABNZBD_HOST_WHITELIST>
+host_whitelist = <SABNZBD_HOST>, <SABNZBD_HOST_WHITELIST>  # de-duplicated
 api_key = <SABNZBD_API_KEY>
 nzb_key = <SABNZBD_NZB_KEY>
 ```
 
 The `host_whitelist` line is written only when at least one hostname is known;
-with the defaults it becomes e.g. `sabnzbd.example.com, sabnzbd`. The `api_key`
+with the defaults it becomes e.g. `sabnzbd.example.com, sabnzbd` (the entrypoint
+de-duplicates the merge, since the public hostname also appears in
+`SABNZBD_HOST_WHITELIST`). The `api_key`
 and `nzb_key` lines are written only when set. Seeding the API key keeps it
 stable across restarts and config reseeds, so subsequent containers can consume
 it as `${SABNZBD_API_KEY}` instead of scraping the auto-generated value.
@@ -125,12 +127,13 @@ volumes:
 
 Other containers on the same network reach SABnzbd at `http://sabnzbd:8080`.
 They send `Host: sabnzbd:8080`, which is not a loopback/IP/`.local` name, so the
-service name `sabnzbd` is whitelisted by default via `SABNZBD_HOST_WHITELIST`.
-Their source IP is private, so the local-IP check passes. API calls still need
-the SABnzbd API key.
+service name `sabnzbd` is whitelisted (hardcoded value of
+`SABNZBD_HOST_WHITELIST` in the compose file). Their source IP is private, so
+the local-IP check passes. API calls still need the SABnzbd API key.
 
-If you rename the compose service or reach it under another name, add that
-name to `SABNZBD_HOST_WHITELIST` (comma-separated). Using the container IP
+The whitelist is not env-configurable; if you rename the compose service or
+reach it under another name, edit the hardcoded `SABNZBD_HOST_WHITELIST` value
+in `docker-compose.yml` (comma-separated). Using the container IP
 (`http://<ip>:8080`) also works because IP literals always pass the Host check.
 
 ### Allowing public-internet access (optional)
