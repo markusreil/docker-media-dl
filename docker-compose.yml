@@ -1,0 +1,87 @@
+name: media-dl
+
+# All configuration comes from the .env file.
+# ${VAR:?...} interpolation makes `docker compose` fail fast when a
+# required variable is missing or empty.
+
+# --- Hostname scheme -------------------------------------------------------
+# Every service is published via nginx-proxy at <service>.<DOMAIN>, where
+# DOMAIN comes from .env (e.g. localhost or media-dl.localhost). The anchors
+# below are the single source of truth for those hostnames; services
+# reference them with *sabnzbd-host / *prowlarr-host for VIRTUAL_HOST,
+# LETSENCRYPT_HOST and any app-level hostname setting. Change DOMAIN in .env
+# and the whole stack moves at once.
+x-hosts:
+  sabnzbd: &sabnzbd-host sabnzbd.${DOMAIN:?DOMAIN is required (see .env)}
+  prowlarr: &prowlarr-host prowlarr.${DOMAIN:?DOMAIN is required}
+
+services:
+  sabnzbd:
+    build:
+      context: ./sabnzbd
+      args:
+        SABNZBD_VERSION: ${SABNZBD_VERSION:?SABNZBD_VERSION is required (see .env)}
+    image: media-dl/sabnzbd:${SABNZBD_VERSION:?SABNZBD_VERSION is required}
+    container_name: sabnzbd
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:?PUID is required}
+      PGID: ${PGID:?PGID is required}
+      TZ: ${TZ:?TZ is required}
+      VIRTUAL_HOST: *sabnzbd-host
+      VIRTUAL_PORT: "8080"
+      LETSENCRYPT_HOST: *sabnzbd-host
+      LETSENCRYPT_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      # Seeded into [misc] host_whitelist on first start so SABnzbd accepts
+      # requests for the public hostname forwarded by nginx-proxy.
+      SABNZBD_HOST: *sabnzbd-host
+      # Extra accepted Host headers (default: the service name, so other
+      # containers can use http://sabnzbd:8080).
+      SABNZBD_HOST_WHITELIST: ${SABNZBD_HOST_WHITELIST:-sabnzbd}
+      # Seeded into the config on first start and shared with other services.
+      SABNZBD_API_KEY: ${SABNZBD_API_KEY:?SABNZBD_API_KEY is required (see .env)}
+      SABNZBD_NZB_KEY: ${SABNZBD_NZB_KEY:-}
+    volumes:
+      - sabnzbd-config:/config
+      - sabnzbd-data:/data
+    expose:
+      - "8080"
+    networks:
+      - nginx-proxy
+
+  prowlarr:
+    build:
+      context: ./prowlarr
+      args:
+        PROWLARR_VERSION: ${PROWLARR_VERSION:?PROWLARR_VERSION is required (see .env)}
+    image: media-dl/prowlarr:${PROWLARR_VERSION:?PROWLARR_VERSION is required}
+    container_name: prowlarr
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:?PUID is required}
+      PGID: ${PGID:?PGID is required}
+      TZ: ${TZ:?TZ is required}
+      VIRTUAL_HOST: *prowlarr-host
+      VIRTUAL_PORT: "9696"
+      LETSENCRYPT_HOST: *prowlarr-host
+      LETSENCRYPT_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      # Seeded into config.xml on first start so other services share a
+      # stable API key instead of scraping the auto-generated one. Also used
+      # by the container healthcheck.
+      PROWLARR_API_KEY: ${PROWLARR_API_KEY:?PROWLARR_API_KEY is required (see .env)}
+    volumes:
+      - prowlarr-config:/config
+    expose:
+      - "9696"
+    networks:
+      - nginx-proxy
+
+networks:
+  nginx-proxy:
+    external: true
+    name: ${NGINX_PROXY_NETWORK:?NGINX_PROXY_NETWORK is required}
+
+volumes:
+  sabnzbd-config:
+  sabnzbd-data:
+  prowlarr-config:

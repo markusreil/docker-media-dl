@@ -1,0 +1,490 @@
+# =============================================================================
+# SABnzbd 5.x - complete reference sabnzbd.ini
+# -----------------------------------------------------------------------------
+# This file is a REFERENCE, generated from the SABnzbd 5.1.3 source defaults
+# (sabnzbd/cfg.py, sabnzbd/config.py, sabnzbd/constants.py).
+#
+#   * It is NOT copied into the image and is NOT read at runtime.
+#   * The container seeds a minimal /config/sabnzbd.ini on first start (see
+#     entrypoint.sh) and SABnzbd rewrites it on every setting change.
+#   * Values shown are SABnzbd's built-in defaults unless a comment says
+#     otherwise. Options marked (internal) are managed by SABnzbd and should
+#     normally not be set by hand.
+#   * Empty value = unset/disabled.
+#
+# To use this as a starting config: copy it to the config volume as
+# `sabnzbd.ini` BEFORE the first start. On the host that path is the
+# `sabnzbd-config` volume (docker volume inspect media-dl_sabnzbd-config).
+# =============================================================================
+
+__version__ = 19
+__encoding__ = utf-8
+
+# =============================================================================
+# [misc] - General, Web UI, Folders, Switches, Specials and email
+# =============================================================================
+[misc]
+
+# --- Internal version / one-time trackers -----------------------------------
+# Leave these alone. They exist so SABnzbd can migrate old configs.
+config_conversion_version = 0
+notified_new_skin = 0
+fixed_ports = 0                          # (internal)
+direct_unpack_tested = 0                 # (internal)
+sorters_converted = 0                    # (internal)
+
+# --- General ----------------------------------------------------------------
+helpful_warnings = 1                     # show helpful warnings in the UI
+queue_complete =                          # command/URL run when the queue finishes
+queue_complete_pers = 0                  # persist queue complete action across restarts
+bandwidth_perc = 100                     # percentage of bandwidth_max to use (0-100)
+refresh_rate = 0                         # UI refresh interval in seconds (0 = default)
+interface_settings =                      # saved UI layout/state (JSON, managed by UI)
+queue_limit = 20                         # max simultaneous queued NZBs (0 = unlimited)
+config_lock = 0                          # 1 = lock config, prevents saving settings
+check_new_rel = 1                         # check for new releases at startup
+auto_browser = 1                         # open a browser when SABnzbd starts
+language = en                            # UI language
+
+# --- Web interface / security -----------------------------------------------
+enable_https_verification = 1            # verify TLS certs on outbound https (indexer) calls
+host = 127.0.0.1                         # bind address. Container sets 0.0.0.0:8080 via --server
+port = 8080                              # HTTP port
+https_port =                              # HTTPS port (only used when enable_https = 1)
+username =                                # optional HTTP auth username
+password =                                # optional HTTP auth password
+bandwidth_max =                           # global speed limit, e.g. 50M or 5M
+cache_limit =                             # article cache limit, e.g. 500M
+web_dir = Glitter                        # UI skin
+web_color = Auto                         # UI accent colour
+https_cert = server.cert                 # TLS certificate file
+https_key = server.key                   # TLS private key file
+https_chain =                             # intermediate certificate chain file
+enable_https = 0                         # 1 = also serve HTTPS
+inet_exposure = 0                        # 0=local only,1=nzb,2=api,3=full api,4=webui,5=webui+login
+api_key =                                 # auto-generated on first run, or seeded via SABNZBD_API_KEY
+nzb_key =                                 # auto-generated on first run, or seeded via SABNZBD_NZB_KEY
+socks5_proxy_url =                        # outbound SOCKS5 proxy, e.g. socks5://host:1080
+
+# --- Folders -----------------------------------------------------------------
+# Container override on first run: download_dir=/data/incomplete
+#                                   complete_dir=/data/complete
+# NOTE: incomplete and complete live on the same /data volume so completed jobs
+# can be moved atomically (rename) and hardlinked.
+permissions =                             # filesystem permissions for created files, e.g. 770
+download_dir = Downloads/incomplete       # temporary download location
+download_free = 500M                      # free space to keep when starting downloads
+complete_dir = Downloads/complete         # finished download location
+complete_free =                           # free space to keep when finishing jobs
+fulldisk_autoresume = 0                   # resume automatically when disk space returns
+script_dir =                              # directory with post-processing scripts
+nzb_backup_dir =                          # where to store backup copies of NZBs
+admin_dir = admin                         # admin/state folder inside the config dir
+backup_dir =                              # config/database backup location (defaults to complete_dir)
+dirscan_dir =                             # watch folder for .nzb files
+dirscan_speed = 5                         # watch folder scan interval in seconds
+password_file =                           # file containing passwords for encrypted archives
+log_dir = logs                           # log file directory (inside config dir)
+
+# --- Switches ----------------------------------------------------------------
+max_art_tries = 3                         # retries when fetching article info
+top_only = 0                              # only download files at the top level of the NZB
+sfv_check = 1                             # verify SFV files
+script_can_fail = 0                       # treat non-zero script exit as failure
+enable_recursive = 1                      # recursively unpack inside folders
+flat_unpack = 0                           # unpack everything into a flat folder
+par_option =                              # extra par2 command-line parameters
+pre_check = 0                             # run a quick pre-check of the NZB
+nice =                                    # *nix nice parameters
+win_process_prio = 3                      # Windows process priority (Windows only)
+ionice =                                  # *nix ionice parameters
+fail_hopeless_jobs = 1                    # fail jobs that cannot be completed
+fast_fail = 1                             # quickly discard failing servers
+auto_disconnect = 1                       # disconnect (skip) failing servers
+pre_script = None                         # script run before a job starts
+end_queue_script = None                   # script run when the queue is empty
+no_dupes = 0                              # thorough duplicate check (0-2)
+no_series_dupes = 0                       # (legacy) duplicate check for series
+no_smart_dupes = 0                        # skip already-downloaded episodes (0-3)
+dupes_propercheck = 1                     # let par2 verify before declaring duplicate
+pause_on_pwrar = 1                        # pause when a password is needed
+ignore_samples = 0                        # ignore sample files
+deobfuscate_final_filenames = 1           # rename obfuscated final files
+auto_sort =                               # legacy automatic sorting
+direct_unpack = 0                         # unpack while downloading (experimental)
+propagation_delay = 0                     # delay new job downloads (minutes)
+folder_rename = 1                         # rename final folder to job name
+replace_spaces = 0                        # replace spaces in final names
+replace_underscores = 0                   # replace underscores in final names
+replace_dots = 0                          # replace dots in final names
+safe_postproc = 1                         # delete only files SABnzbd added
+pause_on_post_processing = 0              # pause download during post-processing
+enable_all_par = 0                        # use all par2 files when verifying
+sanitize_safe = 0                         # extra-strict filename sanitation
+cleanup_list =                            # extensions to delete after unpack
+unwanted_extensions =                     # extensions that abort a job
+action_on_unwanted_extensions = 0         # 0=discard,1=pause,2=abort
+unwanted_extensions_mode = 0              # 0=all files,1=first file only
+new_nzb_on_failure = 0                    # grab a new NZB when a job fails
+history_retention = 0                     # (legacy) history retention
+history_retention_option = all            # all | number | days
+history_retention_number = 0              # used when history_retention_option = number
+
+# --- Quota -------------------------------------------------------------------
+quota_size =                              # quota size, e.g. 100G
+quota_day =                               # quota day, e.g. 01
+quota_resume = 0                          # resume automatically when quota resets
+quota_period = m                          # quota period: d | w | m
+
+# --- Legacy sorting (internal; superseded by the Sorting config) -------------
+enable_tv_sorting = 0                     # (internal)
+tv_sort_string =                          # (internal)
+tv_categories = tv                        # (internal)
+enable_movie_sorting = 0                  # (internal)
+movie_sort_string =                       # (internal)
+movie_sort_extra = -cd%1                  # (internal)
+movie_categories = movies                 # (internal)
+enable_date_sorting = 0                   # (internal)
+date_sort_string =                        # (internal)
+date_categories = tv                      # (internal)
+
+# --- Scheduling and RSS ------------------------------------------------------
+schedlines =                              # scheduled tasks, one per line (Config > Scheduling)
+rss_rate = 60                             # RSS feed refresh interval in minutes (15-1440)
+
+# --- Specials ----------------------------------------------------------------
+ampm = 0                                  # 12-hour clock in the UI
+start_paused = 0                          # start with the queue paused
+preserve_paused_state = 0                 # remember paused state across restarts
+enable_par_cleanup = 1                    # remove par2 files after successful repair
+process_unpacked_par2 = 1                 # process unpacked par2 content
+enable_unrar = 1                          # use unrar for RAR archives
+enable_7zip = 1                           # use 7zip where useful
+enable_filejoin = 1                       # join split files
+enable_tsjoin = 1                         # join .ts transport streams
+enable_tar = 1                            # unpack tar files
+overwrite_files = 0                       # overwrite existing files
+ignore_unrar_dates = 0                    # ignore timestamps from unrar
+backup_for_duplicates = 0                 # back up NZBs considered duplicates
+wait_for_dfolder = 0                      # wait for download folder to exist
+rss_filenames = 0                         # include titles in RSS filenames
+api_logging = 1                           # log API calls
+html_login = 1                            # use HTML login page
+disable_archive = 0                       # disable reading downloaded archives
+warn_dupl_jobs = 0                        # warn about duplicate jobs
+keep_awake = 1                            # prevent system sleep while downloading
+tray_icon = 1                             # show tray icon (desktop only)
+allow_incomplete_nzb = 0                  # accept NZBs without all segments
+enable_broadcast = 1                      # enable SSDP broadcast for discovery
+ipv6_hosting = 0                          # allow IPv6 hosting
+ipv6_staging = 0                          # allow staging IPv6 addresses
+api_warnings = 1                          # show API warnings (also hides hostname-check text)
+no_penalties = 0                          # disable server penalty system
+x_frame_options = 1                       # send X-Frame-Options header
+allow_old_ssl_tls = 0                      # allow old/weak SSL/TLS protocols
+enable_season_sorting = 1                 # season-aware sorting
+verify_xff_header = 1                     # verify X-Forwarded-For (5.0+: on by default)
+                                          # set 0 to trust the proxy and allow public clients
+direct_write = 1                          # write directly to final download dir when safe
+rss_odd_titles = nzbindex.nl/, nzbindex.com/, nzbclub.com/   # titles treated as obfuscated
+quick_check_ext_ignore = nfo, sfv, srr    # extensions ignored by quick-check
+req_completion_rate = 100.2               # minimum completion rate (100-200)
+selftest_host = self-test.sabnzbd.org     # connectivity self-test host
+movie_rename_limit = 100M                 # rename threshold for movies
+episode_rename_limit = 20M                # rename threshold for episodes
+size_limit = 0                            # minimum job size (0 = off)
+direct_unpack_threads = 3                 # threads for direct unpack
+history_limit = 10                         # number of history entries kept
+wait_ext_drive = 5                        # wait for external drive (seconds)
+max_foldername_length = 246               # max folder name length
+nomedia_marker =                          # marker filename, e.g. .nomedia
+ipv6_servers = 1                          # allow IPv6 news servers
+url_base =                                # URL base for reverse proxies, e.g. /sabnzbd
+# *** The hostname-verification allow-list (see README). ***
+# Only requests whose Host header is localhost, an IP, *.local, or an entry in
+# this list are accepted. Behind nginx-proxy the public hostname MUST be listed,
+# and other containers reaching http://sabnzbd:8080 need the service name too:
+host_whitelist =                          # e.g. sabnzbd.example.com, sabnzbd
+local_ranges =                            # extra "local" CIDR ranges, e.g. 192.168.1.0/24
+max_url_retries = 10                      # retries for failed URL fetches
+downloader_sleep_time = 10                # downloader loop sleep (seconds)
+receive_threads = 2                       # article receiver threads
+assembler_max_queue_size = 12             # max assembler queue size
+switchinterval = 0.005                    # Python GIL switch interval
+ssdp_broadcast_interval = 15              # SSDP broadcast interval (seconds)
+ext_rename_ignore =                       # extensions excluded from final renaming
+unrar_parameters =                        # extra unrar parameters
+outgoing_nntp_ip =                        # outgoing IP address for NNTP connections
+
+# --- Email notifications (stored in [misc]) ----------------------------------
+email_server =                            # SMTP server, e.g. smtp.example.com:587
+email_to =                                # recipient(s), comma separated
+email_from =                              # sender address
+email_account =                           # SMTP username
+email_pwd =                               # SMTP password
+email_endjob = 0                          # 0=no mail,1=mail on completion,2=mail on failure
+email_full = 0                            # email full log
+email_dir =                               # email template directory
+email_rss = 0                             # email RSS-generated downloads
+email_cats = *                            # categories that trigger email
+
+# =============================================================================
+# [logging]
+# =============================================================================
+[logging]
+log_level = 1                             # -1=errors,0=warnings,1=info,2=debug
+max_log_size = 5242880                    # bytes before log rotation (5 MiB)
+log_backups = 5                           # rotated log files to keep (1-1024)
+
+# =============================================================================
+# Notification agents
+# Every agent has: <name>_enable, <name>_cats and <name>_prio_* keys.
+# Priority: -3,-2,-1 = low/very low; 0 = normal; 1,2 = high/very high.
+# Enable only the agents you use; the rest can be left at their defaults.
+# =============================================================================
+
+# --- macOS Notification Center (desktop only) --------------------------------
+[ncenter]
+ncenter_enable = 0
+ncenter_cats = *
+ncenter_prio_startup = 0
+ncenter_prio_download = 0
+ncenter_prio_pause_resume = 0
+ncenter_prio_pp = 0
+ncenter_prio_complete = 1
+ncenter_prio_failed = 1
+ncenter_prio_disk_full = 1
+ncenter_prio_quota = 1
+ncenter_prio_new_login = 0
+ncenter_prio_warning = 0
+ncenter_prio_error = 0
+ncenter_prio_queue_done = 0
+ncenter_prio_other = 1
+
+# --- Windows Notification Center (desktop only) ------------------------------
+[acenter]
+acenter_enable = 0
+acenter_cats = *
+acenter_prio_startup = 0
+acenter_prio_download = 0
+acenter_prio_pause_resume = 0
+acenter_prio_pp = 0
+acenter_prio_complete = 1
+acenter_prio_failed = 1
+acenter_prio_disk_full = 1
+acenter_prio_quota = 1
+acenter_prio_new_login = 0
+acenter_prio_warning = 0
+acenter_prio_error = 0
+acenter_prio_queue_done = 0
+acenter_prio_other = 1
+
+# --- Linux on-screen notifications (used in this Alpine container) -----------
+[ntfosd]
+ntfosd_enable = 1
+ntfosd_cats = *
+ntfosd_prio_startup = 0
+ntfosd_prio_download = 0
+ntfosd_prio_pause_resume = 0
+ntfosd_prio_pp = 0
+ntfosd_prio_complete = 1
+ntfosd_prio_failed = 1
+ntfosd_prio_disk_full = 1
+ntfosd_prio_quota = 1
+ntfosd_prio_new_login = 0
+ntfosd_prio_warning = 0
+ntfosd_prio_error = 0
+ntfosd_prio_queue_done = 0
+ntfosd_prio_other = 1
+
+# --- Prowl (iOS push) --------------------------------------------------------
+[prowl]
+prowl_enable = 0
+prowl_cats = *
+prowl_apikey =
+prowl_prio_startup = -3
+prowl_prio_download = -3
+prowl_prio_pause_resume = -3
+prowl_prio_pp = -3
+prowl_prio_complete = 0
+prowl_prio_failed = 1
+prowl_prio_disk_full = 1
+prowl_prio_quota = 0
+prowl_prio_new_login = -3
+prowl_prio_warning = -3
+prowl_prio_error = -3
+prowl_prio_queue_done = -3
+prowl_prio_other = 0
+
+# --- Pushover -----------------------------------------------------------------
+[pushover]
+pushover_token =
+pushover_userkey =
+pushover_device =
+pushover_emergency_expire = 3600
+pushover_emergency_retry = 60
+pushover_enable = 0
+pushover_cats = *
+pushover_prio_startup = -3
+pushover_prio_download = -2
+pushover_prio_pause_resume = -2
+pushover_prio_pp = -3
+pushover_prio_complete = -1
+pushover_prio_failed = -1
+pushover_prio_disk_full = 1
+pushover_prio_quota = -1
+pushover_prio_new_login = -3
+pushover_prio_warning = 1
+pushover_prio_error = 1
+pushover_prio_queue_done = -3
+pushover_prio_other = -1
+
+# --- Pushbullet --------------------------------------------------------------
+[pushbullet]
+pushbullet_enable = 0
+pushbullet_cats = *
+pushbullet_apikey =
+pushbullet_device =
+pushbullet_prio_startup = 0
+pushbullet_prio_download = 0
+pushbullet_prio_pause_resume = 0
+pushbullet_prio_pp = 0
+pushbullet_prio_complete = 1
+pushbullet_prio_failed = 1
+pushbullet_prio_disk_full = 1
+pushbullet_prio_quota = 1
+pushbullet_prio_new_login = 0
+pushbullet_prio_warning = 0
+pushbullet_prio_error = 0
+pushbullet_prio_queue_done = 0
+pushbullet_prio_other = 1
+
+# --- Apprise (100+ services via apprise URLs) --------------------------------
+[apprise]
+apprise_enable = 0
+apprise_cats = *
+apprise_urls =
+apprise_target_startup =
+apprise_target_startup_enable = 0
+apprise_target_download =
+apprise_target_download_enable = 0
+apprise_target_pause_resume =
+apprise_target_pause_resume_enable = 0
+apprise_target_pp =
+apprise_target_pp_enable = 0
+apprise_target_complete =
+apprise_target_complete_enable = 1
+apprise_target_failed =
+apprise_target_failed_enable = 1
+apprise_target_disk_full =
+apprise_target_disk_full_enable = 0
+apprise_target_quota =
+apprise_target_quota_enable = 1
+apprise_target_new_login =
+apprise_target_new_login_enable = 1
+apprise_target_warning =
+apprise_target_warning_enable = 0
+apprise_target_error =
+apprise_target_error_enable = 0
+apprise_target_queue_done =
+apprise_target_queue_done_enable = 0
+apprise_target_other =
+apprise_target_other_enable = 1
+
+# --- Custom notification script ----------------------------------------------
+[nscript]
+nscript_enable = 0
+nscript_cats = *
+nscript_script =
+nscript_parameters =
+nscript_prio_startup = 0
+nscript_prio_download = 0
+nscript_prio_pause_resume = 0
+nscript_prio_pp = 0
+nscript_prio_complete = 1
+nscript_prio_failed = 1
+nscript_prio_disk_full = 1
+nscript_prio_quota = 1
+nscript_prio_new_login = 0
+nscript_prio_warning = 0
+nscript_prio_error = 0
+nscript_prio_queue_done = 0
+nscript_prio_other = 1
+
+# =============================================================================
+# Dynamic sections
+# -----------------------------------------------------------------------------
+# The sections below are created from the GUI/API and hold one subsection per
+# server / category / RSS feed / sorter. They are shown here as EXAMPLES only.
+# =============================================================================
+
+# --- News servers ------------------------------------------------------------
+# One subsection per server name. `connections` and `ssl` matter most; servers
+# with `optional = 1` are only used if all non-optional servers fail.
+[servers]
+[[news.example.com]]
+name = news.example.com
+displayname = news.example.com
+host = news.example.com
+port = 563
+timeout = 60
+username =
+password =
+connections = 8
+ssl = 1
+ssl_verify = 3               # 0=no,1=minimal,2=medium,3=strict
+ssl_ciphers =
+enable = 1
+required = 0
+optional = 0
+pipelining_requests = 2
+retention = 0
+expire_date =
+quota =
+usage_at_start = 0
+priority = 0
+notes =
+
+# --- Categories --------------------------------------------------------------
+# `pp` = post-processing level (0-3, or -1 = default), `dir` = relative folder
+# under complete_dir, `priority` = -1..2 (low..force).
+[categories]
+[[*]]
+order = 0
+pp = 3
+script = Default
+dir =
+newzbin =
+priority = 0
+
+[[tv]]
+order = 1
+pp = 3
+script = Default
+dir = tv
+newzbin =
+priority = 0
+
+# --- RSS feeds ---------------------------------------------------------------
+# One subsection per feed. Filters are numbered `filter0`, `filter1`, ...
+[rss]
+[[My Feed]]
+name = My Feed
+uri = https://indexer.example.com/rss?apikey=XXXX
+cat = *
+pp = 3
+script = Default
+enable = 1
+priority = 0
+filter0 = , , , A, *, 0, 1
+
+# --- Sorting (new sorter) ----------------------------------------------------
+[sorters]
+[[tv]]
+order = 0
+min_size = 50M
+multipart_label =
+sort_string =
+sort_cats = tv
+sort_type =
+is_active = 1
