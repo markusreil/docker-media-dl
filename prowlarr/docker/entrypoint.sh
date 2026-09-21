@@ -5,6 +5,41 @@ set -eu
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
+# Idempotent upsert of the "No RSS" sync profile via the Prowlarr v1 API
+# (resource: AppProfile). Public trackers must not be polled for RSS, so
+# this profile has RSS off with automatic + interactive search on.
+# Never touches the default "Standard" profile (id 1).
+seed_no_rss_profile() {
+    base="http://127.0.0.1:9696/api/v1/appprofile"
+    # Wait for the API (up to ~120s).
+    i=0
+    while [ "$i" -lt 60 ]; do
+        if wget -q -O /dev/null --header="X-Api-Key: $PROWLARR_API_KEY" \
+            http://127.0.0.1:9696/api/v1/system/status 2>/dev/null; then
+            break
+        fi
+        i=$((i + 1))
+        sleep 2
+    done
+
+    profiles=$(wget -q -O - --header="X-Api-Key: $PROWLARR_API_KEY" "$base" 2>/dev/null || true)
+    [ -n "$profiles" ] || return 0
+    id=$(printf '%s' "$profiles" | jq -r '.[] | select(.name=="No RSS") | .id // empty' | head -n 1)
+    desired='{"name":"No RSS","enableRss":false,"enableAutomaticSearch":true,"enableInteractiveSearch":true,"minimumSeeders":1}'
+
+    if [ -n "$id" ]; then
+        existing=$(printf '%s' "$profiles" | jq --argjson id "$id" '.[] | select(.id==$id)')
+        body=$(printf '%s' "$existing" | jq --argjson desired "$desired" '$desired as $d | . + {name: $d.name, enableRss: $d.enableRss, enableAutomaticSearch: $d.enableAutomaticSearch, enableInteractiveSearch: $d.enableInteractiveSearch, minimumSeeders: $d.minimumSeeders}')
+        wget -q -O /dev/null --header="X-Api-Key: $PROWLARR_API_KEY" \
+            --header="Content-Type: application/json" \
+            --method=PUT --body-data="$body" "$base/$id" 2>/dev/null || true
+    else
+        wget -q -O /dev/null --header="X-Api-Key: $PROWLARR_API_KEY" \
+            --header="Content-Type: application/json" \
+            --post-data="$desired" "$base" 2>/dev/null || true
+    fi
+}
+
 if [ "$(id -u)" = "0" ]; then
     addgroup -g "$PGID" -S prowlarr 2>/dev/null || true
     adduser -u "$PUID" -S -G prowlarr -h /config -s /sbin/nologin prowlarr 2>/dev/null || true
@@ -52,7 +87,16 @@ if [ "$(id -u)" = "0" ]; then
 
     chown -R "$PUID:$PGID" /config 2>/dev/null || true
 
-    exec su-exec "$PUID:$PGID" "$@"
+    # Start Prowlarr in the background as the unprivileged user, seed the
+    # "No RSS" sync profile once the API is up (only when the API key is
+    # set), then wait on Prowlarr as the foreground action.
+    su-exec "$PUID:$PGID" /app/Prowlarr -nobrowser -data=/config &
+    PROWLARR_PID=$!
+    if [ -n "${PROWLARR_API_KEY:-}" ]; then
+        seed_no_rss_profile || true
+    fi
+    wait "$PROWLARR_PID"
+    exit $?
 fi
 
 exec "$@"

@@ -9,7 +9,7 @@ if [ "$(id -u)" = "0" ]; then
     addgroup -g "$PGID" -S qbittorrent 2>/dev/null || true
     adduser -u "$PUID" -S -G qbittorrent -h /config -s /sbin/nologin qbittorrent 2>/dev/null || true
 
-    mkdir -p /config/qBittorrent/config /data/incomplete /data/complete
+    mkdir -p /config/qBittorrent/config /data/torrents/incomplete /data/torrents/complete
 
     # qBittorrent has no env-var/CLI override for its WebUI credentials
     # (password has to exist in the config as a PBKDF2 hash), so the
@@ -23,9 +23,9 @@ if [ "$(id -u)" = "0" ]; then
     #     WebUI and API behind nginx-proxy.
     #
     #     Optional: QBT_AUTH_SUBNET_WHITELIST (CIDR list) skips login for
-    #     clients from those subnets — set it to the docker network nginx-proxy
-    #     attaches to (e.g. 172.18.0.0/16) to open the WebUI without a login
-    #     behind the proxy. Empty = login always required.
+    #     clients from those subnets — defaults to 172.16.0.0/12 (the full
+    #     private range) so any docker network matches without mapping the
+    #     network name to its subnet. Empty = login always required.
     #
     # Host-header handling (anti-DNS-rebinding) mirrors SABnzbd's
     # host_whitelist approach: WebUI\HostHeaderValidation stays on and
@@ -79,8 +79,8 @@ PYEOF
 
         {
             echo '[BitTorrent]'
-            printf '%s\n' 'Session\DefaultSavePath=/data/complete'
-            printf '%s\n' 'Session\TempPath=/data/incomplete'
+            printf '%s\n' 'Session\DefaultSavePath=/data/torrents/complete'
+            printf '%s\n' 'Session\TempPath=/data/torrents/incomplete'
             printf '%s\n' 'Session\TempPathEnabled=true'
             printf '%s\n' 'Session\Port=6881'
             echo
@@ -107,7 +107,7 @@ PYEOF
     # ensure the directory roots are owned correctly to avoid expensive
     # recursive chown (new files inherit ownership from the running user).
     chown -R "$PUID:$PGID" /config 2>/dev/null || true
-    chown "$PUID:$PGID" /data /data/incomplete /data/complete 2>/dev/null || true
+    chown "$PUID:$PGID" /data /data/torrents /data/torrents/incomplete /data/torrents/complete 2>/dev/null || true
 
     exec su-exec "$PUID:$PGID" "$@"
 fi

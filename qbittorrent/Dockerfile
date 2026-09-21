@@ -9,6 +9,9 @@
 FROM alpine:3.24
 
 ARG QBT_VERSION=5.2.1
+ENV BASE_IMAGE=alpine:3.24
+ARG BUILD_DATE=unknown
+ENV BUILD_DATE=${BUILD_DATE}
 
 RUN set -eux; \
     apk add --no-cache \
@@ -19,7 +22,7 @@ RUN set -eux; \
         su-exec; \
     rm -rf /tmp/* /root/.cache
 
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8085

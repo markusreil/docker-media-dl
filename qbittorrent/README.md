@@ -24,10 +24,10 @@ The Alpine package is pinned with `~=`, e.g. `5.2.1-r0`.
 
 | Item | Value |
 | --- | --- |
-| Port | `8085` (WebUI HTTP, exposed to the internal network only, forwarded via `VIRTUAL_HOST`) |
-| Peer port | `6881` TCP+UDP published to the host (the one host-port exception in the stack, needed for inbound bittorrent connections; host port is configurable via `QBT_BT_PORT`) |
+| Port | `8085` (WebUI HTTP, internal only via `expose: 8085`, reached through nginx-proxy via `VIRTUAL_HOST`; never published to the host) |
+| Peer port | `6881` TCP+UDP published to the host (the stack's single host-port exception, needed for inbound bittorrent peer traffic; host port is configurable via `QBT_BT_PORT` as `${QBT_BT_PORT}:6881/tcp+udp`). The container always listens on the fixed internal port `6881`; only the host-side port varies |
 | Config volume | `qbittorrent-config` → `/config` (holds `qBittorrent.conf`) |
-| Data volume | `qbittorrent-data` → `/data` (incomplete + complete torrents, same volume so finished moves are atomic renames) |
+| Data volume | shared `downloads` → `/data` (torrent subdirs: `torrents/incomplete`, `torrents/complete` — same volume mounted at `/data` in sabnzbd and radarr) |
 | Entrypoint | `/usr/local/bin/entrypoint.sh` |
 
 The container joins the external `nginx-proxy` network and is reached through
@@ -42,10 +42,10 @@ the existing `nginx-proxy` / Let's Encrypt sidecar using `VIRTUAL_HOST` — at
 | `TZ` | Container timezone |
 | `VIRTUAL_HOST` | Public hostname routed by nginx-proxy (`qbittorrent.<BASE_DOMAIN>`) |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`8085`) |
-| `LETSENCRYPT_HOST` / `LETSENCRYPT_EMAIL` | Certificate request details |
+| `LETSENCRYPT_HOST` | Certificate hostname (contact uses proxy `DEFAULT_EMAIL`) |
 | `QBT_HOST` | Public hostname (`qbittorrent.<BASE_DOMAIN>`), seeded into `WebUI\ServerDomains` on first start |
 | `QBT_HOST_WHITELIST` | Extra accepted Host headers, hardcoded in compose as `qbittorrent;qbittorrent.<BASE_DOMAIN>` |
-| `QBT_AUTH_SUBNET_WHITELIST` | Optional CIDR subnets that bypass the WebUI login (`172.18.0.0/16` in this repo's `.env`); empty = login always required. Seeded into `WebUI\AuthSubnetWhitelist` on first start |
+| `QBT_AUTH_SUBNET_WHITELIST` | Optional CIDR subnets that bypass the WebUI login (`172.16.0.0/12` — the full private range, so any docker network matches — in this repo's `.env`); empty = login always required. Seeded into `WebUI\AuthSubnetWhitelist` on first start |
 | `QBT_WEBUI_USERNAME` | WebUI login username (default `admin`) |
 | `QBT_WEBUI_PASSWORD` | WebUI login password — **required**, seeded as a PBKDF2 hash on first start |
 | `QBT_BT_PORT` | Host port for bittorrent peer traffic (TCP+UDP), forwarded to the container's fixed port `6881` (default `6881`) |
@@ -57,8 +57,8 @@ exist, the entrypoint writes a minimal config:
 
 ```ini
 [BitTorrent]
-Session\DefaultSavePath=/data/complete
-Session\TempPath=/data/incomplete
+Session\DefaultSavePath=/data/torrents/complete
+Session\TempPath=/data/torrents/incomplete
 Session\TempPathEnabled=true
 Session\Port=6881
 
@@ -81,9 +81,20 @@ The password hash is derived in the entrypoint with PBKDF2-HMAC-SHA512
 qBittorrent itself generates (verified against the actual release). Because
 qBittorrent has no anonymous mode, the seeded login is the normal way in; the
 only exception is when `QBT_AUTH_SUBNET_WHITELIST` is set — clients from those
-subnets (e.g. the docker network nginx-proxy attaches to) skip the login.
+subnets (default `172.16.0.0/12`, i.e. any docker network) skip the login.
 Existing configs are never overwritten; to change credentials or reseed,
 remove the service and its volume then `docker compose up -d`.
+
+The `torrents/` subdir of the shared `downloads` volume keeps torrent paths
+separate from SABnzbd's `usenet/` subdir (avoids both clients writing to
+`/data/complete`). All three containers mount the volume at identical `/data`
+paths, so Radarr sees the exact downloader paths — no RemotePathMappings
+needed, the Servarr "directory does not appear to exist" health check stays
+green, and hardlinks work on the single filesystem.
+
+> Migration: existing installs must reseed the qbittorrent config (write-once
+> seeder) so the new `/data/torrents/...` paths apply. The old
+> `qbittorrent-data` volume becomes an orphan (remove it once migrated).
 
 ## Access paths
 

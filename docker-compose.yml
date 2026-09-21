@@ -8,14 +8,25 @@ name: media-dl
 # Every service is published via nginx-proxy at <service>.<BASE_DOMAIN>, where
 # BASE_DOMAIN comes from .env (e.g. localhost or media-dl.localhost). The anchors
 # below are the single source of truth for those hostnames; services
-# reference them with *prowlarr-host / *qbittorrent-host / *sabnzbd-host for
-# VIRTUAL_HOST, LETSENCRYPT_HOST and any app-level hostname setting. Change
+# reference them with *jellyfin-host / *prowlarr-host / *radarr-host /
+# *sonarr-host / *qbittorrent-host / *sabnzbd-host for VIRTUAL_HOST,
+# LETSENCRYPT_HOST and any app-level hostname setting. Change
 # BASE_DOMAIN in .env and the whole stack moves at once.
 x-hosts:
+  jellyfin: &jellyfin-host jellyfin.${BASE_DOMAIN:?BASE_DOMAIN is required}
+  jellyfin-href: &jellyfin-href "http://jellyfin.${BASE_DOMAIN}"
   prowlarr: &prowlarr-host prowlarr.${BASE_DOMAIN:?BASE_DOMAIN is required}
   # Scheme-prefixed public URLs derived from the same anchors, used only by the
   # Homepage dashboard labels (homepage.href) below.
   prowlarr-href: &prowlarr-href "http://prowlarr.${BASE_DOMAIN}"
+  radarr: &radarr-host radarr.${BASE_DOMAIN:?BASE_DOMAIN is required}
+  # Scheme-prefixed public URLs derived from the same anchors, used only by the
+  # Homepage dashboard labels (homepage.href) below.
+  radarr-href: &radarr-href "http://radarr.${BASE_DOMAIN}"
+  sonarr: &sonarr-host sonarr.${BASE_DOMAIN:?BASE_DOMAIN is required}
+  # Scheme-prefixed public URLs derived from the same anchors, used only by the
+  # Homepage dashboard labels (homepage.href) below.
+  sonarr-href: &sonarr-href "http://sonarr.${BASE_DOMAIN}"
   qbittorrent: &qbittorrent-host qbittorrent.${BASE_DOMAIN:?BASE_DOMAIN is required}
   qbittorrent-href: &qbittorrent-href "http://qbittorrent.${BASE_DOMAIN}"
   # qBittorrent's ServerDomains extras, hardcoded (not env-configurable): the
@@ -31,14 +42,65 @@ x-hosts:
   # Merged with SABNZBD_HOST and de-duplicated in the entrypoint.
   sabnzbd-whitelist: &sabnzbd-whitelist "sabnzbd, sabnzbd.${BASE_DOMAIN}"
 
+# --- Media mount switch ------------------------------------------------------
+# Single source of truth for the /media mounts; services reference *media-ro
+# (Jellyfin) or *media-rw (Radarr/Sonarr). The /media source switches via
+# MEDIA_VOLUME only (no compose edit): media-local (regular volume) or
+# media-nfs (NFS).
+x-media:
+  ro: &media-ro "${MEDIA_VOLUME:-media-local}:/media:ro"
+  rw: &media-rw "${MEDIA_VOLUME:-media-local}:/media"
+
 services:
+  jellyfin:
+    hostname: jellyfin.${BASE_DOMAIN}
+    build:
+      context: ./jellyfin
+      args:
+        JELLYFIN_VERSION: ${JELLYFIN_VERSION:?JELLYFIN_VERSION is required (see .env)}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    image: media-dl/jellyfin:${JELLYFIN_VERSION:?JELLYFIN_VERSION is required}
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:?PUID is required}
+      PGID: ${PGID:?PGID is required}
+      TZ: ${TZ:?TZ is required}
+      VIRTUAL_HOST: *jellyfin-host
+      VIRTUAL_PORT: "8096"
+      LETSENCRYPT_HOST: *jellyfin-host
+      # Seeded into jellyfin.db ApiKeys on start so peers share a stable API
+      # key; converges on 2nd start on fresh installs (server creates schema
+      # on 1st start).
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:?JELLYFIN_API_KEY is required (see .env)}
+    # Homepage (gethomepage.dev) auto-discovery labels.
+    labels:
+      homepage.group: Media
+      homepage.name: Jellyfin
+      homepage.icon: jellyfin
+      homepage.href: *jellyfin-href
+      homepage.description: Media server
+      homepage.widget.type: jellyfin
+      homepage.widget.url: "http://jellyfin:8096"
+      homepage.widget.key: ${JELLYFIN_API_KEY:?JELLYFIN_API_KEY is required (see .env)}
+      homepage.widget.version: "2"
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      # /media source switches via MEDIA_VOLUME (see x-media above):
+      # Jellyfin mounts read-only; Radarr/Sonarr mount read-write.
+      - *media-ro
+    expose:
+      - "8096"
+    networks:
+      - nginx-proxy
+
   prowlarr:
     build:
       context: ./prowlarr
       args:
         PROWLARR_VERSION: ${PROWLARR_VERSION:?PROWLARR_VERSION is required (see .env)}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
     image: media-dl/prowlarr:${PROWLARR_VERSION:?PROWLARR_VERSION is required}
-    container_name: prowlarr
     restart: unless-stopped
     environment:
       PUID: ${PUID:?PUID is required}
@@ -47,7 +109,6 @@ services:
       VIRTUAL_HOST: *prowlarr-host
       VIRTUAL_PORT: "9696"
       LETSENCRYPT_HOST: *prowlarr-host
-      LETSENCRYPT_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
       # Seeded into config.xml on first start so other services share a
       # stable API key instead of scraping the auto-generated one. Also used
       # by the container healthcheck.
@@ -69,13 +130,111 @@ services:
     networks:
       - nginx-proxy
 
+  radarr:
+    build:
+      context: ./radarr
+      args:
+        RADARR_VERSION: ${RADARR_VERSION:?RADARR_VERSION is required (see .env)}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    image: media-dl/radarr:${RADARR_VERSION:?RADARR_VERSION is required}
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:?PUID is required}
+      PGID: ${PGID:?PGID is required}
+      TZ: ${TZ:?TZ is required}
+      VIRTUAL_HOST: *radarr-host
+      VIRTUAL_PORT: "7878"
+      LETSENCRYPT_HOST: *radarr-host
+      # Seeded into config.xml on first start so other services share a
+      # stable API key instead of scraping the auto-generated one. Also used
+      # by the container healthcheck.
+      RADARR_API_KEY: ${RADARR_API_KEY:?RADARR_API_KEY is required (see .env)}
+      # Consumed on every (re)start by the entrypoint to upsert the Sabnzbd
+      # download client via the Radarr v3 API (existing required var).
+      SABNZBD_API_KEY: ${SABNZBD_API_KEY:?SABNZBD_API_KEY is required (see .env)}
+      # Consumed on every (re)start by the entrypoint to upsert the
+      # QBittorrent download client via the Radarr v3 API (existing vars
+      # shared with qBittorrent).
+      QBT_WEBUI_USERNAME: ${QBT_WEBUI_USERNAME:-admin}
+      QBT_WEBUI_PASSWORD: ${QBT_WEBUI_PASSWORD:?QBT_WEBUI_PASSWORD is required (see .env)}
+      # Consumed on every (re)start by the entrypoint to upsert Radarr as an
+      # Application inside Prowlarr (existing var shared with Prowlarr).
+      PROWLARR_API_KEY: ${PROWLARR_API_KEY:?PROWLARR_API_KEY is required (see .env)}
+    # Homepage (gethomepage.dev) auto-discovery labels.
+    labels:
+      homepage.group: Media
+      homepage.name: Radarr
+      homepage.icon: radarr
+      homepage.href: *radarr-href
+      homepage.description: Movie manager
+      homepage.widget.type: radarr
+      homepage.widget.url: "http://radarr:7878"
+      homepage.widget.key: ${RADARR_API_KEY:?RADARR_API_KEY is required (see .env)}
+    volumes:
+      - radarr-config:/config
+      - "downloads:/data"
+      - *media-rw
+    expose:
+      - "7878"
+    networks:
+      - nginx-proxy
+
+  sonarr:
+    build:
+      context: ./sonarr
+      args:
+        SONARR_VERSION: ${SONARR_VERSION:?SONARR_VERSION is required (see .env)}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    image: media-dl/sonarr:${SONARR_VERSION:?SONARR_VERSION is required}
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:?PUID is required}
+      PGID: ${PGID:?PGID is required}
+      TZ: ${TZ:?TZ is required}
+      VIRTUAL_HOST: *sonarr-host
+      VIRTUAL_PORT: "8989"
+      LETSENCRYPT_HOST: *sonarr-host
+      # Seeded into config.xml on first start so other services share a
+      # stable API key instead of scraping the auto-generated one. Also used
+      # by the container healthcheck.
+      SONARR_API_KEY: ${SONARR_API_KEY:?SONARR_API_KEY is required (see .env)}
+      # Consumed on every (re)start by the entrypoint to upsert the Sabnzbd
+      # download client via the Sonarr v3 API (existing required var).
+      SABNZBD_API_KEY: ${SABNZBD_API_KEY:?SABNZBD_API_KEY is required (see .env)}
+      # Consumed on every (re)start by the entrypoint to upsert the
+      # QBittorrent download client via the Sonarr v3 API (existing vars
+      # shared with qBittorrent).
+      QBT_WEBUI_USERNAME: ${QBT_WEBUI_USERNAME:-admin}
+      QBT_WEBUI_PASSWORD: ${QBT_WEBUI_PASSWORD:?QBT_WEBUI_PASSWORD is required (see .env)}
+      # Consumed on every (re)start by the entrypoint to upsert Sonarr as an
+      # Application inside Prowlarr (existing var shared with Prowlarr).
+      PROWLARR_API_KEY: ${PROWLARR_API_KEY:?PROWLARR_API_KEY is required (see .env)}
+    # Homepage (gethomepage.dev) auto-discovery labels.
+    labels:
+      homepage.group: Media
+      homepage.name: Sonarr
+      homepage.icon: sonarr
+      homepage.href: *sonarr-href
+      homepage.description: TV series manager
+      homepage.widget.type: sonarr
+      homepage.widget.url: "http://sonarr:8989"
+      homepage.widget.key: ${SONARR_API_KEY:?SONARR_API_KEY is required (see .env)}
+    volumes:
+      - sonarr-config:/config
+      - "downloads:/data"
+      - *media-rw
+    expose:
+      - "8989"
+    networks:
+      - nginx-proxy
+
   qbittorrent:
     build:
       context: ./qbittorrent
       args:
         QBT_VERSION: ${QBT_VERSION:?QBT_VERSION is required (see .env)}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
     image: media-dl/qbittorrent:${QBT_VERSION:?QBT_VERSION is required}
-    container_name: qbittorrent
     restart: unless-stopped
     environment:
       PUID: ${PUID:?PUID is required}
@@ -84,15 +243,14 @@ services:
       VIRTUAL_HOST: *qbittorrent-host
       VIRTUAL_PORT: "8085"
       LETSENCRYPT_HOST: *qbittorrent-host
-      LETSENCRYPT_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
       # Seeded into [Preferences] WebUI\ServerDomains on first start so the
       # public hostname forwarded by nginx-proxy is accepted (anti-DNS-rebinding).
       QBT_HOST: *qbittorrent-host
       # Extra accepted Host headers, hardcoded: the service name (so other
       # containers can use http://qbittorrent:8085) plus the public hostname.
       QBT_HOST_WHITELIST: *qbittorrent-whitelist
-      # Optional: CIDR subnets that bypass the WebUI login (e.g. the docker
-      # network nginx-proxy attaches to). Empty = login always required.
+      # Optional: CIDR subnets that bypass the WebUI login (default
+      # 172.16.0.0/12 covers any docker network). Empty = login always required.
       QBT_AUTH_SUBNET_WHITELIST: ${QBT_AUTH_SUBNET_WHITELIST:-}
       # WebUI login. qBittorrent has no anonymous mode and no env-var override
       # for its credentials, so these are seeded (PBKDF2-hashed) into the
@@ -112,7 +270,7 @@ services:
       homepage.widget.password: ${QBT_WEBUI_PASSWORD:?QBT_WEBUI_PASSWORD is required (see .env)}
     volumes:
       - qbittorrent-config:/config
-      - qbittorrent-data:/data
+      - downloads:/data
     expose:
       - "8085"
     # Only host ports in the stack: bittorrent peer traffic (TCP+UDP).
@@ -128,8 +286,8 @@ services:
       context: ./sabnzbd
       args:
         SABNZBD_VERSION: ${SABNZBD_VERSION:?SABNZBD_VERSION is required (see .env)}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
     image: media-dl/sabnzbd:${SABNZBD_VERSION:?SABNZBD_VERSION is required}
-    container_name: sabnzbd
     restart: unless-stopped
     environment:
       PUID: ${PUID:?PUID is required}
@@ -138,7 +296,6 @@ services:
       VIRTUAL_HOST: *sabnzbd-host
       VIRTUAL_PORT: "8080"
       LETSENCRYPT_HOST: *sabnzbd-host
-      LETSENCRYPT_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
       # Seeded into [misc] host_whitelist on first start so SABnzbd accepts
       # requests for the public hostname forwarded by nginx-proxy.
       SABNZBD_HOST: *sabnzbd-host
@@ -162,7 +319,7 @@ services:
       homepage.widget.key: ${SABNZBD_API_KEY:?SABNZBD_API_KEY is required (see .env)}
     volumes:
       - sabnzbd-config:/config
-      - sabnzbd-data:/data
+      - downloads:/data
     expose:
       - "8080"
     networks:
@@ -174,8 +331,18 @@ networks:
     name: ${NGINX_PROXY_NETWORK:?NGINX_PROXY_NETWORK is required}
 
 volumes:
+  jellyfin-config:
+  jellyfin-cache:
+  media-local:
+  media-nfs:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${MEDIA_NFS_HOST:?MEDIA_NFS_HOST is required},nfsvers=${MEDIA_NFS_VERS:-4},hard,timeo=600,retrans=2,proto=tcp,noatime"
+      device: ":${MEDIA_NFS_PATH:?MEDIA_NFS_PATH is required}"
   sabnzbd-config:
-  sabnzbd-data:
+  downloads:
   prowlarr-config:
+  radarr-config:
+  sonarr-config:
   qbittorrent-config:
-  qbittorrent-data:

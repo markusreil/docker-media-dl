@@ -11,12 +11,16 @@ playback, deployed as a single `docker compose` project named `media-dl`.
 
 Core requirements (from the original spec):
 
-* Single compose file for all containers.
+* Single compose file for all containers (one documented exception:
+  `docker-compose.media-archived.yml`, an optional overlay that adds the
+  archived-library volume/mounts — compose has no conditional mounts, so
+  optionality needs a second file).
 * One compose project, cluster name `media-dl`.
 * Integrates with an existing external nginx-proxy (reverse proxy + Let's
   Encrypt companion) on a shared docker network.
-* ALL configuration lives in `.env`; compose must fail fast if a required
-  variable is missing or empty.
+* ALL configuration lives in `.env` (hidden, gitignored, copied via
+  `cp env.example .env`); the tracked template is `env.example`. Compose must
+  fail fast if a required variable is missing or empty.
 * Base image for every container is Alpine; extra build steps per container are
   acceptable.
 * Standard docker volumes so container configuration survives restarts and
@@ -28,15 +32,24 @@ Services:
 | --- | --- | --- | --- |
 | `sabnzbd` | Usenet downloader | `sabnzbd.<BASE_DOMAIN>` | 8080 |
 | `prowlarr` | Indexer manager | `prowlarr.<BASE_DOMAIN>` | 9696 |
+| `radarr` | Movie manager | `radarr.<BASE_DOMAIN>` | 7878 |
+| `sonarr` | TV series manager | `sonarr.<BASE_DOMAIN>` | 8989 |
 | `qbittorrent` | BitTorrent client | `qbittorrent.<BASE_DOMAIN>` | 8085 |
+| `jellyfin` | Media server | `jellyfin.<BASE_DOMAIN>` | 8096 |
 
 ## Layout
 
 ```
 docker-compose.yml     single compose file (services, hosts, networks, volumes)
-.env                   all configuration (secrets, defaults, comments) — tracked in git
+docker-compose.media-archived.yml
+                       optional overlay: archived-library volume + mounts
+                       (`-f` it in to serve /media-archived, else ignored)
+env.example            tracked example configuration (copy to .env, hidden/ignored)
+.env                   local configuration (secrets) — hidden, gitignored, never committed
 sabnzbd/               Alpine SABnzbd image: Dockerfile, entrypoint.sh, README
 prowlarr/              Alpine Prowlarr image: Dockerfile, entrypoint.sh, README
+radarr/                Alpine Radarr image: Dockerfile, entrypoint.sh, README
+sonarr/                Alpine Sonarr image: Dockerfile, entrypoint.sh, README
 qbittorrent/           Alpine qBittorrent image: Dockerfile, entrypoint.sh, README
 ```
 
@@ -44,13 +57,14 @@ Each service directory has a README with build details, environment variables,
 and the reasoning behind security choices. Keep those in sync when behavior
 changes.
 
-To scaffold a NEW compose project from scratch, follow
-[`COMPOSE.md`](COMPOSE.md) — the generic recipe this repo was built from.
+To scaffold a NEW compose project from scratch, follow the spec recipe
+concept (COMPOSE spec: single compose file, `env.example` template, `x-hosts`
+anchors, proxy integration) — there is no workspace COMPOSE.md file.
 
 ## Build / run / verify
 
 ```sh
-# edit .env first (there is no .env.example — defaults and comments live in .env)
+# edit .env first (copied via `cp env.example .env`; defaults and comments live in env.example)
 docker compose config  # sanity check; fails fast on missing vars
 docker compose build
 docker compose up -d
@@ -75,8 +89,9 @@ and serve their UIs.
   compose errors out on missing/empty values. Never replace these with silent
   defaults for required config (secrets, versions, domain, proxy network).
 * **Hostnames are anchored once.** `x-hosts` at the top of
-  `docker-compose.yml` defines `sabnzbd.${BASE_DOMAIN}` and `prowlarr.${BASE_DOMAIN}`;
-  both services reference the anchors via `*sabnzbd-host` / `*prowlarr-host`
+  `docker-compose.yml` defines `<service>.${BASE_DOMAIN}` for every service;
+  services reference the anchors via `*sabnzbd-host` / `*prowlarr-host` /
+  `*radarr-host` / `*sonarr-host` / `*qbittorrent-host` / `*jellyfin-host`
   for `VIRTUAL_HOST`, `LETSENCRYPT_HOST`, and app-level hostname env vars; the
   derived `*-href` URL anchors feed the Homepage dashboard labels
   (`homepage.href`). Changing `BASE_DOMAIN` in `.env` moves the whole stack. Keep
@@ -86,9 +101,12 @@ and serve their UIs.
   single exception is qbittorrent, which publishes the bittorrent peer port
   (`QBT_BT_PORT`, default 6881, TCP+UDP) to the host for inbound connections;
   that is the stack's only host-port exception.
-* **Both images are built from source in this repo** on Alpine; qBittorrent is
+* **Images are built from source in this repo** on Alpine (Radarr/Sonarr from
+  the official musl builds, SABnzbd from source tarball); qBittorrent is
   installed from the Alpine community package `qbittorrent-nox`. No
-  LinuxServer/third-party images; that is a deliberate spec choice.
+  LinuxServer/third-party images; that is a deliberate spec choice. One
+  documented exception: Jellyfin builds `FROM` the official
+  `jellyfin/jellyfin` image (see `jellyfin/README.md`).
 * **Entrypoints are write-once config seeders.** Each `entrypoint.sh` seeds a
   minimal config on FIRST start only (`if [ ! -f ... ]`), and never overwrites
   an existing one. Config changes in the entrypoint do not apply to existing
@@ -100,17 +118,39 @@ and serve their UIs.
   unprivileged user. Config dirs are chowned recursively (small); data dirs
   only at the root (potentially huge — new files inherit ownership from the
   running user).
-* **`.env` is tracked in git** in this repo. Do not "help" by gitignoring it
-  or by committing secrets elsewhere.
-* **There is no `.env.example`** — it does not exist in this repo. Defaults
-  and comments go directly into `.env`; it is the real, tracked configuration
-  file and the source of truth for variables, defaults, and documentation.
+* **`env.example` is the tracked template; `.env` is hidden/ignored.**
+  Do not gitignore `env.example`, do not track `.env`.
+* **Shared media volume.** `MEDIA_VOLUME` switches `/media` between
+  `media-local` (regular volume, default) and `media-nfs` (NFS mount);
+  Jellyfin mounts it read-only (`:ro`), Radarr/Sonarr read-write
+  (imports/renames). A second NFS export on the same host,
+  `media-archived-nfs` (`:${MEDIA_ARCHIVED_NFS_PATH}`, reusing
+  `MEDIA_NFS_HOST`/`MEDIA_NFS_VERS`), is mounted read-only (`:ro`) at
+  `/media-archived` in Jellyfin, Radarr and Sonarr — but ONLY via the
+  optional `docker-compose.media-archived.yml` overlay (compose cannot
+  conditionally omit mounts, so the archive is opt-in per deployment, not
+  part of the base file). The archive is served/scanned, never written to. The `/media` + `/media-archived` mount
+  strings are anchored once in `x-media` (`*media-ro` / `*media-rw` /
+  `*media-archived-ro`) so the `MEDIA_VOLUME` switch lives in one place.
+* **Shared downloads volume.** One top-level `downloads` volume is mounted at
+  identical `/data` paths in sabnzbd, qbittorrent, radarr, AND sonarr
+  (radarr/sonarr read-write — they hardlink/import; `/media` unchanged).
+  SABnzbd uses
+  `/data/usenet/{incomplete,complete,backup}`, qBittorrent uses
+  `/data/torrents/{incomplete,complete}`; per-client subdirs avoid the
+  sabnzbd/torrent `/data/complete` name clash. Identical paths let Radarr see
+  the exact downloader paths (no RemotePathMappings, Servarr "directory does
+  not appear to exist" health check stays green) and keep hardlinks on one
+  filesystem. Migration: reseed sabnzbd/qbittorrent configs (write-once
+  seeders); old `sabnzbd-data`/`qbittorrent-data` volumes become orphans.
 
 ## SABnzbd specifics (`sabnzbd/`)
 
 * No env-var override exists for SABnzbd's folders, so the entrypoint seeds
-  `download_dir` (incomplete) and `complete_dir` (complete) into `sabnzbd.ini`.
-  Incomplete and complete share the `/data` volume so finished jobs move via
+  `download_dir` (`/data/usenet/incomplete`), `complete_dir`
+  (`/data/usenet/complete`), and `backup_dir` (`/data/usenet/backup`) into
+  `sabnzbd.ini`. Incomplete and complete share the `/data/usenet` subdir of the
+  shared `downloads` volume so finished jobs move via
   atomic rename/hardlink; a dedicated `backup_dir` keeps backups out of
   `complete`.
 * **DNS-rebinding protection**: SABnzbd rejects requests whose `Host` header is
@@ -182,7 +222,7 @@ Before finishing a change:
 1. `docker compose config` passes with a fresh `.env` copy.
 2. Variable interpolation still fails fast on missing vars (no silent
    defaults for required ones).
-3. New/changed env vars are documented in `.env` (with defaults and comments)
+3. New/changed env vars are documented in `env.example` (with defaults and comments)
    and in `README.md` / the service README. There is no `.env.example` to
    update.
 4. Seeding logic only runs on first start; existing configs are untouched.

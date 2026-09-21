@@ -9,11 +9,11 @@ if [ "$(id -u)" = "0" ]; then
     addgroup -g "$PGID" -S sabnzbd 2>/dev/null || true
     adduser -u "$PUID" -S -G sabnzbd -h /config -s /sbin/nologin sabnzbd 2>/dev/null || true
 
-    mkdir -p /config /data/incomplete /data/complete /data/backup
+    mkdir -p /config /data/usenet/incomplete /data/usenet/complete /data/usenet/backup
 
     # SABnzbd has no env-var or CLI override for its folders, so seed a minimal
-    # config on first run. Incomplete and complete share the /data volume so
-    # finished jobs can be moved atomically (rename) and hardlinked, and a
+    # config on first run. Incomplete and complete share the /data/usenet subdir
+    # so finished jobs can be moved atomically (rename) and hardlinked, and a
     # dedicated backup dir keeps config/database backups out of complete.
     # Existing configs are never overwritten.
     #
@@ -43,9 +43,9 @@ if [ "$(id -u)" = "0" ]; then
 
         {
             echo '[misc]'
-            echo 'download_dir = /data/incomplete'
-            echo 'complete_dir = /data/complete'
-            echo 'backup_dir = /data/backup'
+            echo 'download_dir = /data/usenet/incomplete'
+            echo 'complete_dir = /data/usenet/complete'
+            echo 'backup_dir = /data/usenet/backup'
             if [ -n "$whitelist" ]; then
                 printf 'host_whitelist = %s\n' "$whitelist"
             fi
@@ -62,7 +62,7 @@ if [ "$(id -u)" = "0" ]; then
     # ensure the directory roots are owned correctly to avoid expensive
     # recursive chown (new files inherit ownership from the running user).
     chown -R "$PUID:$PGID" /config 2>/dev/null || true
-    chown "$PUID:$PGID" /data /data/incomplete /data/complete /data/backup 2>/dev/null || true
+    chown "$PUID:$PGID" /data /data/usenet /data/usenet/incomplete /data/usenet/complete /data/usenet/backup 2>/dev/null || true
 
     exec su-exec "$PUID:$PGID" "$@"
 fi

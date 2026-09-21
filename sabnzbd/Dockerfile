@@ -10,11 +10,14 @@ FROM ghcr.io/linuxserver/unrar:latest AS unrar
 FROM alpine:3.24
 
 ARG SABNZBD_VERSION=5.1.3
+ARG BUILD_DATE=unknown
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
-    SABNZBD_HOME=/config
+    SABNZBD_HOME=/config \
+    BASE_IMAGE=alpine:3.24 \
+    BUILD_DATE=${BUILD_DATE}
 
 RUN set -eux; \
     apk add --no-cache \
@@ -56,7 +59,7 @@ RUN apk add --no-cache \
 
 COPY --from=unrar /usr/bin/unrar-alpine /usr/bin/unrar
 
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh && { rmdir /downloads 2>/dev/null || true; }
 
 EXPOSE 8080

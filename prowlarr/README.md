@@ -20,6 +20,12 @@ docker compose build prowlarr
 
 `PROWLARR_VERSION` is a required build arg (`Dockerfile` default: `2.6.5.5623`).
 
+Build context files live in `docker/` (`docker/entrypoint.sh` is copied to
+`/usr/local/bin/entrypoint.sh` in the image).
+
+The image records `ENV BASE_IMAGE=alpine:3.24` (what it was built `FROM`) and
+`ENV BUILD_DATE` (build timestamp, defaults to `unknown`).
+
 ## Runtime
 
 | Item | Value |
@@ -41,7 +47,7 @@ Let's Encrypt sidecar using `VIRTUAL_HOST` — at `prowlarr.<BASE_DOMAIN>` (see
 | `TZ` | Container timezone |
 | `VIRTUAL_HOST` | Public hostname routed by nginx-proxy (`prowlarr.<BASE_DOMAIN>`) |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`9696`) |
-| `LETSENCRYPT_HOST` / `LETSENCRYPT_EMAIL` | Certificate request details |
+| `LETSENCRYPT_HOST` | Certificate hostname (contact uses proxy `DEFAULT_EMAIL`) |
 | `PROWLARR_API_KEY` | API key (access token), seeded into `config.xml` on first start, shared with other services, and used by the container healthcheck (required) |
 
 ### Startup behaviour
@@ -79,6 +85,20 @@ a minimal config:
   resolution bug, verified empirically in this project). If the proxy is ever
   exposed beyond the LAN/VPN, enable Forms auth in `Settings > General` and
   set credentials. The API remains protected by the API key either way.
+
+### Sync profiles ("No RSS" for public trackers)
+
+On every start, once the API is up, the entrypoint idempotently seeds a sync
+profile named `No RSS` via `POST/PUT /api/v1/appprofile` (never touches the
+default `Standard` profile, id 1):
+
+* `enableRss: false` (no RSS polling of public trackers)
+* `enableAutomaticSearch: true`, `enableInteractiveSearch: true`
+* `minimumSeeders: 1`
+
+Assign it per indexer via the Sync Profile dropdown in `Settings > Indexers`
+(or `Settings > Apps` sync settings). New indexers still default to
+`Standard` — switch public trackers to `No RSS` manually.
 
 ## Access paths
 

@@ -30,7 +30,7 @@ docker compose build sabnzbd
 | --- | --- |
 | Port | `8080` (HTTP, exposed to the internal network only) |
 | Config volume | `sabnzbd-config` → `/config` (holds `sabnzbd.ini`, logs, admin) |
-| Data volume | `sabnzbd-data` → `/data` (incomplete + complete downloads, config/db backups) |
+| Data volume | shared `downloads` → `/data` (usenet subdirs: `usenet/incomplete`, `usenet/complete`, `usenet/backup` — shared with qbittorrent and radarr at identical paths) |
 | Entrypoint | `/usr/local/bin/entrypoint.sh` (drops privileges, seeds config) |
 
 The container does not publish ports to the host. It joins the external
@@ -45,7 +45,7 @@ Let's Encrypt sidecar using `VIRTUAL_HOST`.
 | `TZ` | Container timezone |
 | `VIRTUAL_HOST` | Public hostname routed by nginx-proxy, derived from `BASE_DOMAIN` in `.env` as `sabnzbd.<BASE_DOMAIN>` |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`8080`) |
-| `LETSENCRYPT_HOST` / `LETSENCRYPT_EMAIL` | Certificate request details |
+| `LETSENCRYPT_HOST` | Certificate hostname (contact uses proxy `DEFAULT_EMAIL`) |
 | `SABNZBD_HOST` | Public hostname (`sabnzbd.<BASE_DOMAIN>`), seeded into `host_whitelist` on first run |
 | `SABNZBD_HOST_WHITELIST` | Extra accepted Host headers, hardcoded in compose as `sabnzbd, sabnzbd.<BASE_DOMAIN>` |
 | `SABNZBD_API_KEY` | API key (access token), seeded into `api_key` and shared with other services |
@@ -58,9 +58,9 @@ minimal config:
 
 ```ini
 [misc]
-download_dir = /data/incomplete
-complete_dir = /data/complete
-backup_dir = /data/backup
+download_dir = /data/usenet/incomplete
+complete_dir = /data/usenet/complete
+backup_dir = /data/usenet/backup
 host_whitelist = <SABNZBD_HOST>, <SABNZBD_HOST_WHITELIST>  # de-duplicated
 api_key = <SABNZBD_API_KEY>
 nzb_key = <SABNZBD_NZB_KEY>
@@ -74,9 +74,21 @@ and `nzb_key` lines are written only when set. Seeding the API key keeps it
 stable across restarts and config reseeds, so subsequent containers can consume
 it as `${SABNZBD_API_KEY}` instead of scraping the auto-generated value.
 
-Incomplete and complete downloads share the `/data` volume so finished jobs can
-be moved with an atomic rename and hardlinked. Existing configs are never
+Incomplete and complete downloads share the `/data/usenet` subdir of the shared
+`downloads` volume (also mounted at `/data` in qbittorrent and radarr) so
+finished jobs can be moved with an atomic rename and hardlinked. The per-client
+subdirs (`usenet/` vs qbittorrent's `torrents/`) avoid the name clash where
+both clients would otherwise write to `/data/complete`. Identical `/data`
+paths in every container mean Radarr sees the exact downloader paths (no
+RemotePathMappings needed) and its health check
+("download client places downloads in /data/... but this directory does not
+appear to exist") stays green. Existing configs are never
 overwritten.
+
+> Migration: existing installs must reseed the sabnzbd config (write-once
+> seeder — remove service + config volume and recreate) so the new
+> `/data/usenet/...` paths apply. The old `sabnzbd-data` volume becomes an
+> orphan (remove it once migrated).
 
 ## Access paths
 
@@ -217,7 +229,7 @@ The entrypoint only seeds a new config, so if you already have a
 
 ## Configuration reference
 
-`sabnzbd.ini.example` in this directory is a complete, commented reference of
+`sabnzbd.ini.example` in `docker/` is a complete, commented reference of
 the SABnzbd 5.x configuration (every `[misc]` option, logging, notification
 agents, and example `[servers]` / `[categories]` / `[rss]` / `[sorters]`
 sections). It is documentation only — it is neither copied into the image nor

@@ -67,10 +67,10 @@ nzb_key =                                 # auto-generated on first run, or seed
 socks5_proxy_url =                        # outbound SOCKS5 proxy, e.g. socks5://host:1080
 
 # --- Folders -----------------------------------------------------------------
-# Container override on first run: download_dir=/data/incomplete
-#                                   complete_dir=/data/complete
-# NOTE: incomplete and complete live on the same /data volume so completed jobs
-# can be moved atomically (rename) and hardlinked.
+# Container override on first run: download_dir=/data/usenet/incomplete
+#                                   complete_dir=/data/usenet/complete
+# NOTE: incomplete and complete live in the same /data/usenet subdir so
+# completed jobs can be moved atomically (rename) and hardlinked.
 permissions =                             # filesystem permissions for created files, e.g. 770
 download_dir = Downloads/incomplete       # temporary download location
 download_free = 500M                      # free space to keep when starting downloads

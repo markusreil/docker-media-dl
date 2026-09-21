@@ -1,0 +1,35 @@
+# Optional archived-library overlay for the media-dl project.
+#
+# Compose has no conditional mounts, so the archived library lives here
+# instead of in docker-compose.yml: the base stack works with or without it.
+#
+# Usage (include in manual commands and automatic deployments alike):
+#   docker compose -f docker-compose.yml -f docker-compose.media-archived.yml up -d
+#
+# Requires MEDIA_ARCHIVED_NFS_PATH in .env (compose fails fast without it
+# when this file is used). Reuses MEDIA_NFS_HOST / MEDIA_NFS_VERS — the
+# archive is a second export on the SAME NFS host.
+#
+# Effect: media-archived-nfs is mounted read-only at /media-archived in
+# Jellyfin (served), Radarr and Sonarr (scanned, never written to). The NFS
+# mount itself carries `ro`, so the archive cannot be written to even by the
+# read-write /media peers.
+
+services:
+  jellyfin:
+    volumes:
+      - "media-archived-nfs:/media-archived:ro"
+  radarr:
+    volumes:
+      - "media-archived-nfs:/media-archived:ro"
+  sonarr:
+    volumes:
+      - "media-archived-nfs:/media-archived:ro"
+
+volumes:
+  media-archived-nfs:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${MEDIA_NFS_HOST:?MEDIA_NFS_HOST is required},nfsvers=${MEDIA_NFS_VERS:-4},hard,timeo=600,retrans=2,proto=tcp,noatime,ro"
+      device: ":${MEDIA_ARCHIVED_NFS_PATH:?MEDIA_ARCHIVED_NFS_PATH is required}"
