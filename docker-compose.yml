@@ -67,6 +67,11 @@ services:
       TZ: ${TZ:?TZ is required}
       VIRTUAL_HOST: *jellyfin-host
       VIRTUAL_PORT: "8096"
+      # Per-vhost HTTPS override understood by nginx-proxy (it reads
+      # HTTPS_METHOD from each proxied container and defaults to "redirect").
+      # "nohttps" serves Jellyfin over plain HTTP only: no 443 server block and
+      # no 301 redirect. Only this service is affected. See env.example.
+      HTTPS_METHOD: ${JELLYFIN_HTTPS_METHOD:-redirect}
       LETSENCRYPT_HOST: *jellyfin-host
       # Seeded into jellyfin.db ApiKeys on start so peers share a stable API
       # key; converges on 2nd start on fresh installs (server creates schema
