@@ -14,7 +14,8 @@ Core requirements (from the original spec):
 * Single compose file for all containers (one documented exception:
   `docker-compose.media-archived.yml`, an optional overlay that adds the
   archived-library volume/mounts — compose has no conditional mounts, so
-  optionality needs a second file).
+  optionality needs a second file, registered by adding it to `COMPOSE_FILE`
+  in `.env`).
 * One compose project, cluster name `media-dl`.
 * Integrates with an existing external nginx-proxy (reverse proxy + ACME
   companion) on a shared docker network.
@@ -122,7 +123,8 @@ and serve their UIs.
   `/media-archived` in Jellyfin, Radarr and Sonarr — but ONLY via the
   optional `docker-compose.media-archived.yml` overlay (compose cannot
   conditionally omit mounts, so the archive is opt-in per deployment, not
-  part of the base file). The archive is served/scanned, never written to. The `/media` + `/media-archived` mount
+  part of the base file; register it by adding the file to `COMPOSE_FILE` in
+  `.env` — no `-f` flags). The archive is served/scanned, never written to. The `/media` + `/media-archived` mount
   strings are anchored once in `x-media` (`*media-ro` / `*media-rw` /
   `*media-archived-ro`) so the `MEDIA_VOLUME` switch lives in one place.
 * **Shared downloads volume.** One top-level `downloads` volume is mounted at

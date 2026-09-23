@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SABNZBD_GEN_SELF_SIGNED_CERT`; default `false`) so the proxy variant decides
   between the ACME and self-signed certificate paths.
 - `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+- `COMPOSE_FILE` in `.env` / `env.example`, defaulting to the base
+  `docker-compose.yml`. Listing the optional archived-library overlay there
+  registers it for every compose command, replacing per-command `-f` flags.
 
 ### Changed
 
@@ -30,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Homepage `homepage.href` anchors now use `https://`.
 - README, `AGENTS.md`, `env.example`, and the service READMEs synced to the new
   proxy contract.
+- Archived-library overlay documented as registered via `COMPOSE_FILE` in
+  `.env` instead of per-command `-f` flags.
 
 ### Deprecated
 
