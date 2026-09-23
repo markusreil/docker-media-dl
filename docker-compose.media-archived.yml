@@ -3,8 +3,11 @@
 # Compose has no conditional mounts, so the archived library lives here
 # instead of in docker-compose.yml: the base stack works with or without it.
 #
-# Usage (include in manual commands and automatic deployments alike):
-#   docker compose -f docker-compose.yml -f docker-compose.media-archived.yml up -d
+# Usage: register it via COMPOSE_FILE in .env (applies to every compose
+# command, no `-f` needed):
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.media-archived.yml
+# Equivalent to `docker compose -f docker-compose.yml
+# -f docker-compose.media-archived.yml <command>` on any command.
 #
 # Requires MEDIA_ARCHIVED_NFS_PATH in .env (compose fails fast without it
 # when this file is used). Reuses MEDIA_NFS_HOST / MEDIA_NFS_VERS — the

@@ -90,6 +90,7 @@ empty required variable (see `docker-compose.yml`).
 
 | Variable | Purpose | Example |
 | --- | --- | --- |
+| `COMPOSE_FILE` | Compose file list (colon-separated on Linux/macOS); defaults to the base file, extend it to register the archived-library overlay | `docker-compose.yml` |
 | `TZ` | Container timezone | `Europe/Amsterdam` |
 | `PUID` / `PGID` | Host UID/GID owning downloaded files | `1000` / `1000` |
 | `NGINX_PROXY_NETWORK` | External nginx-proxy docker network (optional, defaults to `web-proxy`) | `web-proxy` |
@@ -109,7 +110,7 @@ empty required variable (see `docker-compose.yml`).
 | `QBT_BT_PORT` | Host port for bittorrent peer traffic (TCP+UDP) | `6881` |
 | `MEDIA_VOLUME` | Shared media source switch (`media-local` default, or `media-nfs`); Jellyfin mounts `/media:ro`, Radarr/Sonarr mount `/media` read-write | `media-nfs` |
 | `MEDIA_NFS_HOST` / `MEDIA_NFS_PATH` / `MEDIA_NFS_VERS` | NFS server, export path, version (default `4`); only used when `MEDIA_VOLUME=media-nfs` | — |
-| `MEDIA_ARCHIVED_NFS_PATH` | Optional second NFS export path on the same host (reuses `MEDIA_NFS_HOST`/`MEDIA_NFS_VERS`); only used with the `docker-compose.media-archived.yml` overlay (see Storage) | `/mnt/tank/archive` |
+| `MEDIA_ARCHIVED_NFS_PATH` | Optional second NFS export path on the same host (reuses `MEDIA_NFS_HOST`/`MEDIA_NFS_VERS`); only used when the `docker-compose.media-archived.yml` overlay is registered via `COMPOSE_FILE` (see Storage) | `/mnt/tank/archive` |
 | `JELLYFIN_VERSION` | Jellyfin release version, tracks upstream `jellyfin/jellyfin` tag (build arg) | `12.1` |
 | `JELLYFIN_API_KEY` | Jellyfin API key (seeded into `jellyfin.db` on start) | 32-char hex |
 | `SABNZBD_GEN_SELF_SIGNED_CERT` | SABnzbd self-signed TLS opt-in (optional, default `false`); set `true` only for a LAN/self-signed proxy | `false` |
@@ -148,11 +149,12 @@ Data is kept in named volumes (created by Compose), never inside the images:
 
 Compose has no conditional mounts, so the archived library lives in
 `docker-compose.media-archived.yml` instead of the base file — the base
-stack works with or without it. To serve the archive, add `-f` to manual
-commands and automatic deployments alike:
+stack works with or without it. `COMPOSE_FILE` in `.env` names the file(s)
+compose loads (default `docker-compose.yml`); to serve the archive, register
+the overlay there instead of passing `-f` on every command:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.media-archived.yml up -d
+COMPOSE_FILE=docker-compose.yml:docker-compose.media-archived.yml
 ```
 
 This mounts `media-archived-nfs` (`:${MEDIA_ARCHIVED_NFS_PATH}`, same host)
@@ -203,7 +205,7 @@ one example); the services deliberately do not enforce logins:
 docker-compose.yml     single compose file (services, hosts, networks, volumes)
 docker-compose.media-archived.yml
                        optional overlay: archived-library volume + mounts
-                       (`-f` it in to serve /media-archived, else ignored)
+                       (register via COMPOSE_FILE to serve /media-archived, else ignored)
 env.example            tracked example configuration (copy to .env, hidden/ignored)
 .env                   local configuration (secrets) — hidden, gitignored, never committed
 CHANGELOG.md           notable changes, Keep a Changelog (`## [Unreleased]` at the top)
