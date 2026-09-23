@@ -59,7 +59,11 @@ Build context files live in `docker/` (`docker/entrypoint.sh` is copied to
 
 The container does not publish ports to the host. It joins the external
 `nginx-proxy` network and is reached through the existing `nginx-proxy` /
-Let's Encrypt sidecar using `VIRTUAL_HOST`.
+ACME companion using `VIRTUAL_HOST`.
+
+TLS is variant-agnostic: the service declares both TLS opt-ins (`ACME_HOST`
+and `GEN_SELF_SIGNED_CERT`) and the proxy variant decides which one applies —
+there is no per-service TLS-method override, TLS behaviour is cluster policy.
 
 ### Environment variables
 
@@ -69,7 +73,8 @@ Let's Encrypt sidecar using `VIRTUAL_HOST`.
 | `TZ` | Container timezone |
 | `VIRTUAL_HOST` | Public hostname routed by nginx-proxy, derived from `BASE_DOMAIN` in `.env` as `jellyfin.<BASE_DOMAIN>` |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`8096`) |
-| `LETSENCRYPT_HOST` | Certificate hostname (contact uses proxy `DEFAULT_EMAIL`) |
+| `ACME_HOST` | Certificate hostname; the certificate is requested from the cluster's ACME companion |
+| `GEN_SELF_SIGNED_CERT` | Self-signed certificate opt-in for the LAN/self-signed proxy variant; wired from `JELLYFIN_GEN_SELF_SIGNED_CERT` (default `false`; set `true` for LAN/self-signed). Declared alongside `ACME_HOST` so the proxy variant decides which applies |
 | `MEDIA_VOLUME` | Media source, env-var-only switch: `media-local` (default) or `media-nfs`; change in `.env` then `docker compose up -d` (no data migration — local starts empty). Shared with Radarr/Sonarr (Jellyfin mounts ro, Radarr/Sonarr mount rw) |
 | `JELLYFIN_API_KEY` | API key (access token), seeded into `jellyfin.db` `ApiKeys` on start and shared with peers; 32-char lowercase hex |
 | `MEDIA_NFS_HOST` / `MEDIA_NFS_PATH` / `MEDIA_NFS_VERS` | NFS server, export path (e.g. `/mnt/tank/media`) and version (default `4`); only used when `MEDIA_VOLUME=media-nfs` |

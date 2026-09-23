@@ -30,11 +30,12 @@ variables and access notes: [sabnzbd/README.md](sabnzbd/README.md),
 ## Prerequisites
 
 * `docker` with Compose v2 (`docker compose`).
-* A running [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy) with the
-  Let's Encrypt companion on a shared external docker network
-  (default name `web-proxy`, set `NGINX_PROXY_NETWORK` in `.env`). Public
-  hostnames are routed through it and certificates are requested from
-  Let's Encrypt.
+* A running [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy) with an
+  ACME companion (e.g.
+  [acme-companion](https://github.com/nginx-proxy/acme-companion)) on a shared
+  external docker network (default name `web-proxy`, override with
+  `NGINX_PROXY_NETWORK` in `.env`). Public hostnames are routed through it and
+  certificates are requested from the companion's ACME CA.
 
 Networking: everything is reached via the proxy (`expose` only). The single
 host-ports exception is qbittorrent, which publishes
@@ -50,12 +51,12 @@ docker compose up -d
 
 Containers are reached at:
 
-* `http://sabnzbd.<BASE_DOMAIN>` (SABnzbd web UI)
-* `http://prowlarr.<BASE_DOMAIN>` (Prowlarr web UI)
-* `http://radarr.<BASE_DOMAIN>` (Radarr UI)
-* `http://sonarr.<BASE_DOMAIN>` (Sonarr UI)
-* `http://qbittorrent.<BASE_DOMAIN>` (qBittorrent web UI, login required)
-* `http://jellyfin.<BASE_DOMAIN>` (Jellyfin media server)
+* `https://sabnzbd.<BASE_DOMAIN>` (SABnzbd web UI)
+* `https://prowlarr.<BASE_DOMAIN>` (Prowlarr web UI)
+* `https://radarr.<BASE_DOMAIN>` (Radarr UI)
+* `https://sonarr.<BASE_DOMAIN>` (Sonarr UI)
+* `https://qbittorrent.<BASE_DOMAIN>` (qBittorrent web UI, login required)
+* `https://jellyfin.<BASE_DOMAIN>` (Jellyfin media server)
 
 ## Hostname scheme
 
@@ -69,12 +70,18 @@ Every service is published by nginx-proxy at `<service>.<BASE_DOMAIN>`, where
 
 The hostnames are declared once as YAML anchors in `x-hosts` at the top of
 `docker-compose.yml` and referenced by all services for `VIRTUAL_HOST`,
-`LETSENCRYPT_HOST`, and the Homepage dashboard labels (`homepage.href`).
+`ACME_HOST`, and the Homepage dashboard labels (`homepage.href`).
 
-TLS is per-service: nginx-proxy reads `HTTPS_METHOD` from each proxied
-container, so one service can be HTTP-only without affecting the rest. Jellyfin
-sets it from `JELLYFIN_HTTPS_METHOD` (default `nohttps` = plain HTTP, no 443
-listener, no redirect); the other services keep the proxy default (`redirect`).
+Every service is variant-agnostic and declares its **complete** downstream proxy
+contract — `VIRTUAL_HOST`, `VIRTUAL_PORT`, `ACME_HOST`, and
+`GEN_SELF_SIGNED_CERT` (wired from `<SERVICE>_GEN_SELF_SIGNED_CERT`, default
+`false`). The proxy variant decides which TLS opt-in applies: an internet-facing
+proxy honours `ACME_HOST` and requests a publicly trusted certificate from its
+ACME companion, while a LAN/self-signed proxy honours `GEN_SELF_SIGNED_CERT`
+(the `*_GEN_SELF_SIGNED_CERT` variables exist only to let a LAN/self-signed
+deployment or local testing override the default to `true`). `HTTPS_METHOD` is
+never set by downstream services — TLS behaviour is cluster policy owned by the
+proxy.
 
 ## Configuration (.env)
 
@@ -85,7 +92,7 @@ empty required variable (see `docker-compose.yml`).
 | --- | --- | --- |
 | `TZ` | Container timezone | `Europe/Amsterdam` |
 | `PUID` / `PGID` | Host UID/GID owning downloaded files | `1000` / `1000` |
-| `NGINX_PROXY_NETWORK` | External nginx-proxy docker network | `web-proxy` |
+| `NGINX_PROXY_NETWORK` | External nginx-proxy docker network (optional, defaults to `web-proxy`) | `web-proxy` |
 | `BASE_DOMAIN` | Domain suffix for all public hostnames | `localhost` |
 | `SABNZBD_VERSION` | SABnzbd release version (build arg) | `5.1.3` |
 | `SABNZBD_API_KEY` | SABnzbd API key (seeded into config) | 32-char hex |
@@ -105,7 +112,12 @@ empty required variable (see `docker-compose.yml`).
 | `MEDIA_ARCHIVED_NFS_PATH` | Optional second NFS export path on the same host (reuses `MEDIA_NFS_HOST`/`MEDIA_NFS_VERS`); only used with the `docker-compose.media-archived.yml` overlay (see Storage) | `/mnt/tank/archive` |
 | `JELLYFIN_VERSION` | Jellyfin release version, tracks upstream `jellyfin/jellyfin` tag (build arg) | `12.1` |
 | `JELLYFIN_API_KEY` | Jellyfin API key (seeded into `jellyfin.db` on start) | 32-char hex |
-| `JELLYFIN_HTTPS_METHOD` | Per-vhost nginx-proxy `HTTPS_METHOD` for Jellyfin only: `nohttps` (HTTP-only), `redirect` (proxy default), `noredirect` | `nohttps` |
+| `SABNZBD_GEN_SELF_SIGNED_CERT` | SABnzbd self-signed TLS opt-in (optional, default `false`); set `true` only for a LAN/self-signed proxy | `false` |
+| `PROWLARR_GEN_SELF_SIGNED_CERT` | Prowlarr self-signed TLS opt-in (optional, default `false`) | `false` |
+| `RADARR_GEN_SELF_SIGNED_CERT` | Radarr self-signed TLS opt-in (optional, default `false`) | `false` |
+| `SONARR_GEN_SELF_SIGNED_CERT` | Sonarr self-signed TLS opt-in (optional, default `false`) | `false` |
+| `QBITTORRENT_GEN_SELF_SIGNED_CERT` | qBittorrent self-signed TLS opt-in (optional, default `false`) | `false` |
+| `JELLYFIN_GEN_SELF_SIGNED_CERT` | Jellyfin self-signed TLS opt-in (optional, default `false`) | `false` |
 
 To update a service, bump its version variable and rebuild:
 
@@ -194,6 +206,7 @@ docker-compose.media-archived.yml
                        (`-f` it in to serve /media-archived, else ignored)
 env.example            tracked example configuration (copy to .env, hidden/ignored)
 .env                   local configuration (secrets) — hidden, gitignored, never committed
+CHANGELOG.md           notable changes, Keep a Changelog (`## [Unreleased]` at the top)
 sabnzbd/               Alpine SABnzbd image: Dockerfile, entrypoint, README
 prowlarr/              Alpine Prowlarr image: Dockerfile, entrypoint, README
 radarr/                Alpine Radarr image: Dockerfile, entrypoint, README

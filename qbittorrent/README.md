@@ -31,7 +31,7 @@ The Alpine package is pinned with `~=`, e.g. `5.2.1-r0`.
 | Entrypoint | `/usr/local/bin/entrypoint.sh` |
 
 The container joins the external `nginx-proxy` network and is reached through
-the existing `nginx-proxy` / Let's Encrypt sidecar using `VIRTUAL_HOST` — at
+the existing `nginx-proxy` / ACME companion using `VIRTUAL_HOST` — at
 `qbittorrent.<BASE_DOMAIN>` (see `BASE_DOMAIN` in `.env`).
 
 ### Environment variables
@@ -42,7 +42,8 @@ the existing `nginx-proxy` / Let's Encrypt sidecar using `VIRTUAL_HOST` — at
 | `TZ` | Container timezone |
 | `VIRTUAL_HOST` | Public hostname routed by nginx-proxy (`qbittorrent.<BASE_DOMAIN>`) |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`8085`) |
-| `LETSENCRYPT_HOST` | Certificate hostname (contact uses proxy `DEFAULT_EMAIL`) |
+| `ACME_HOST` | Certificate hostname; the certificate is requested from the cluster's ACME companion |
+| `GEN_SELF_SIGNED_CERT` | Self-signed certificate opt-in for the LAN/self-signed proxy variant; wired from `QBITTORRENT_GEN_SELF_SIGNED_CERT` (default `false`; set `true` for LAN/self-signed). Declared alongside `ACME_HOST` so the proxy variant decides which applies |
 | `QBT_HOST` | Public hostname (`qbittorrent.<BASE_DOMAIN>`), seeded into `WebUI\ServerDomains` on first start |
 | `QBT_HOST_WHITELIST` | Extra accepted Host headers, hardcoded in compose as `qbittorrent;qbittorrent.<BASE_DOMAIN>` |
 | `QBT_AUTH_SUBNET_WHITELIST` | Optional CIDR subnets that bypass the WebUI login (`172.16.0.0/12` — the full private range, so any docker network matches — in this repo's `.env`); empty = login always required. Seeded into `WebUI\AuthSubnetWhitelist` on first start |

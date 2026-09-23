@@ -10,32 +10,32 @@ name: media-dl
 # below are the single source of truth for those hostnames; services
 # reference them with *jellyfin-host / *prowlarr-host / *radarr-host /
 # *sonarr-host / *qbittorrent-host / *sabnzbd-host for VIRTUAL_HOST,
-# LETSENCRYPT_HOST and any app-level hostname setting. Change
+# ACME_HOST and any app-level hostname setting. Change
 # BASE_DOMAIN in .env and the whole stack moves at once.
 x-hosts:
   jellyfin: &jellyfin-host jellyfin.${BASE_DOMAIN:?BASE_DOMAIN is required}
-  jellyfin-href: &jellyfin-href "http://jellyfin.${BASE_DOMAIN}"
+  jellyfin-href: &jellyfin-href "https://jellyfin.${BASE_DOMAIN}"
   prowlarr: &prowlarr-host prowlarr.${BASE_DOMAIN:?BASE_DOMAIN is required}
   # Scheme-prefixed public URLs derived from the same anchors, used only by the
   # Homepage dashboard labels (homepage.href) below.
-  prowlarr-href: &prowlarr-href "http://prowlarr.${BASE_DOMAIN}"
+  prowlarr-href: &prowlarr-href "https://prowlarr.${BASE_DOMAIN}"
   radarr: &radarr-host radarr.${BASE_DOMAIN:?BASE_DOMAIN is required}
   # Scheme-prefixed public URLs derived from the same anchors, used only by the
   # Homepage dashboard labels (homepage.href) below.
-  radarr-href: &radarr-href "http://radarr.${BASE_DOMAIN}"
+  radarr-href: &radarr-href "https://radarr.${BASE_DOMAIN}"
   sonarr: &sonarr-host sonarr.${BASE_DOMAIN:?BASE_DOMAIN is required}
   # Scheme-prefixed public URLs derived from the same anchors, used only by the
   # Homepage dashboard labels (homepage.href) below.
-  sonarr-href: &sonarr-href "http://sonarr.${BASE_DOMAIN}"
+  sonarr-href: &sonarr-href "https://sonarr.${BASE_DOMAIN}"
   qbittorrent: &qbittorrent-host qbittorrent.${BASE_DOMAIN:?BASE_DOMAIN is required}
-  qbittorrent-href: &qbittorrent-href "http://qbittorrent.${BASE_DOMAIN}"
+  qbittorrent-href: &qbittorrent-href "https://qbittorrent.${BASE_DOMAIN}"
   # qBittorrent's ServerDomains extras, hardcoded (not env-configurable): the
   # service name (so containers can use http://qbittorrent:8085) plus the
   # public hostname. Semicolon-separated to match WebUI\ServerDomains format.
   # Merged with QBT_HOST and de-duplicated in the entrypoint.
   qbittorrent-whitelist: &qbittorrent-whitelist "qbittorrent;qbittorrent.${BASE_DOMAIN}"
   sabnzbd: &sabnzbd-host sabnzbd.${BASE_DOMAIN:?BASE_DOMAIN is required (see .env)}
-  sabnzbd-href: &sabnzbd-href "http://sabnzbd.${BASE_DOMAIN}"
+  sabnzbd-href: &sabnzbd-href "https://sabnzbd.${BASE_DOMAIN}"
   # SABnzbd's host_whitelist extras, hardcoded (not env-configurable): the
   # service name (so containers can use http://sabnzbd:8080) plus the public
   # hostname, making the whitelist robust even if SABNZBD_HOST is ever unset.
@@ -67,12 +67,8 @@ services:
       TZ: ${TZ:?TZ is required}
       VIRTUAL_HOST: *jellyfin-host
       VIRTUAL_PORT: "8096"
-      # Per-vhost HTTPS override understood by nginx-proxy (it reads
-      # HTTPS_METHOD from each proxied container and defaults to "redirect").
-      # "nohttps" serves Jellyfin over plain HTTP only: no 443 server block and
-      # no 301 redirect. Only this service is affected. See env.example.
-      HTTPS_METHOD: ${JELLYFIN_HTTPS_METHOD:-redirect}
-      LETSENCRYPT_HOST: *jellyfin-host
+      ACME_HOST: *jellyfin-host
+      GEN_SELF_SIGNED_CERT: ${JELLYFIN_GEN_SELF_SIGNED_CERT:-false}
       # Seeded into jellyfin.db ApiKeys on start so peers share a stable API
       # key; converges on 2nd start on fresh installs (server creates schema
       # on 1st start).
@@ -113,7 +109,8 @@ services:
       TZ: ${TZ:?TZ is required}
       VIRTUAL_HOST: *prowlarr-host
       VIRTUAL_PORT: "9696"
-      LETSENCRYPT_HOST: *prowlarr-host
+      ACME_HOST: *prowlarr-host
+      GEN_SELF_SIGNED_CERT: ${PROWLARR_GEN_SELF_SIGNED_CERT:-false}
       # Seeded into config.xml on first start so other services share a
       # stable API key instead of scraping the auto-generated one. Also used
       # by the container healthcheck.
@@ -149,7 +146,8 @@ services:
       TZ: ${TZ:?TZ is required}
       VIRTUAL_HOST: *radarr-host
       VIRTUAL_PORT: "7878"
-      LETSENCRYPT_HOST: *radarr-host
+      ACME_HOST: *radarr-host
+      GEN_SELF_SIGNED_CERT: ${RADARR_GEN_SELF_SIGNED_CERT:-false}
       # Seeded into config.xml on first start so other services share a
       # stable API key instead of scraping the auto-generated one. Also used
       # by the container healthcheck.
@@ -198,7 +196,8 @@ services:
       TZ: ${TZ:?TZ is required}
       VIRTUAL_HOST: *sonarr-host
       VIRTUAL_PORT: "8989"
-      LETSENCRYPT_HOST: *sonarr-host
+      ACME_HOST: *sonarr-host
+      GEN_SELF_SIGNED_CERT: ${SONARR_GEN_SELF_SIGNED_CERT:-false}
       # Seeded into config.xml on first start so other services share a
       # stable API key instead of scraping the auto-generated one. Also used
       # by the container healthcheck.
@@ -247,7 +246,8 @@ services:
       TZ: ${TZ:?TZ is required}
       VIRTUAL_HOST: *qbittorrent-host
       VIRTUAL_PORT: "8085"
-      LETSENCRYPT_HOST: *qbittorrent-host
+      ACME_HOST: *qbittorrent-host
+      GEN_SELF_SIGNED_CERT: ${QBITTORRENT_GEN_SELF_SIGNED_CERT:-false}
       # Seeded into [Preferences] WebUI\ServerDomains on first start so the
       # public hostname forwarded by nginx-proxy is accepted (anti-DNS-rebinding).
       QBT_HOST: *qbittorrent-host
@@ -278,8 +278,9 @@ services:
       - downloads:/data
     expose:
       - "8085"
-    # Only host ports in the stack: bittorrent peer traffic (TCP+UDP).
-    # QBT_BT_PORT is the host port; the container always listens on 6881.
+    # Single documented host-port exception in the stack: bittorrent peer
+    # traffic (TCP+UDP) cannot go through the HTTP reverse proxy. QBT_BT_PORT
+    # is the host port; the container always listens on 6881.
     ports:
       - "${QBT_BT_PORT:-6881}:6881/tcp"
       - "${QBT_BT_PORT:-6881}:6881/udp"
@@ -300,7 +301,8 @@ services:
       TZ: ${TZ:?TZ is required}
       VIRTUAL_HOST: *sabnzbd-host
       VIRTUAL_PORT: "8080"
-      LETSENCRYPT_HOST: *sabnzbd-host
+      ACME_HOST: *sabnzbd-host
+      GEN_SELF_SIGNED_CERT: ${SABNZBD_GEN_SELF_SIGNED_CERT:-false}
       # Seeded into [misc] host_whitelist on first start so SABnzbd accepts
       # requests for the public hostname forwarded by nginx-proxy.
       SABNZBD_HOST: *sabnzbd-host
@@ -333,7 +335,7 @@ services:
 networks:
   nginx-proxy:
     external: true
-    name: ${NGINX_PROXY_NETWORK:?NGINX_PROXY_NETWORK is required}
+    name: ${NGINX_PROXY_NETWORK:-web-proxy}
 
 volumes:
   jellyfin-config:

@@ -35,7 +35,7 @@ docker compose build sabnzbd
 
 The container does not publish ports to the host. It joins the external
 `nginx-proxy` network and is reached through the existing `nginx-proxy` /
-Let's Encrypt sidecar using `VIRTUAL_HOST`.
+ACME companion using `VIRTUAL_HOST`.
 
 ### Environment variables
 
@@ -45,7 +45,8 @@ Let's Encrypt sidecar using `VIRTUAL_HOST`.
 | `TZ` | Container timezone |
 | `VIRTUAL_HOST` | Public hostname routed by nginx-proxy, derived from `BASE_DOMAIN` in `.env` as `sabnzbd.<BASE_DOMAIN>` |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`8080`) |
-| `LETSENCRYPT_HOST` | Certificate hostname (contact uses proxy `DEFAULT_EMAIL`) |
+| `ACME_HOST` | Certificate hostname; the certificate is requested from the cluster's ACME companion |
+| `GEN_SELF_SIGNED_CERT` | Self-signed certificate opt-in for the LAN/self-signed proxy variant; wired from `SABNZBD_GEN_SELF_SIGNED_CERT` (default `false`; set `true` for LAN/self-signed). Declared alongside `ACME_HOST` so the proxy variant decides which applies |
 | `SABNZBD_HOST` | Public hostname (`sabnzbd.<BASE_DOMAIN>`), seeded into `host_whitelist` on first run |
 | `SABNZBD_HOST_WHITELIST` | Extra accepted Host headers, hardcoded in compose as `sabnzbd, sabnzbd.<BASE_DOMAIN>` |
 | `SABNZBD_API_KEY` | API key (access token), seeded into `api_key` and shared with other services |

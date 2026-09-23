@@ -16,8 +16,8 @@ Core requirements (from the original spec):
   archived-library volume/mounts — compose has no conditional mounts, so
   optionality needs a second file).
 * One compose project, cluster name `media-dl`.
-* Integrates with an existing external nginx-proxy (reverse proxy + Let's
-  Encrypt companion) on a shared docker network.
+* Integrates with an existing external nginx-proxy (reverse proxy + ACME
+  companion) on a shared docker network.
 * ALL configuration lives in `.env` (hidden, gitignored, copied via
   `cp env.example .env`); the tracked template is `env.example`. Compose must
   fail fast if a required variable is missing or empty.
@@ -36,30 +36,6 @@ Services:
 | `sonarr` | TV series manager | `sonarr.<BASE_DOMAIN>` | 8989 |
 | `qbittorrent` | BitTorrent client | `qbittorrent.<BASE_DOMAIN>` | 8085 |
 | `jellyfin` | Media server | `jellyfin.<BASE_DOMAIN>` | 8096 |
-
-## Layout
-
-```
-docker-compose.yml     single compose file (services, hosts, networks, volumes)
-docker-compose.media-archived.yml
-                       optional overlay: archived-library volume + mounts
-                       (`-f` it in to serve /media-archived, else ignored)
-env.example            tracked example configuration (copy to .env, hidden/ignored)
-.env                   local configuration (secrets) — hidden, gitignored, never committed
-sabnzbd/               Alpine SABnzbd image: Dockerfile, entrypoint.sh, README
-prowlarr/              Alpine Prowlarr image: Dockerfile, entrypoint.sh, README
-radarr/                Alpine Radarr image: Dockerfile, entrypoint.sh, README
-sonarr/                Alpine Sonarr image: Dockerfile, entrypoint.sh, README
-qbittorrent/           Alpine qBittorrent image: Dockerfile, entrypoint.sh, README
-```
-
-Each service directory has a README with build details, environment variables,
-and the reasoning behind security choices. Keep those in sync when behavior
-changes.
-
-To scaffold a NEW compose project from scratch, follow the spec recipe
-concept (COMPOSE spec: single compose file, `env.example` template, `x-hosts`
-anchors, proxy integration) — there is no workspace COMPOSE.md file.
 
 ## Build / run / verify
 
@@ -87,15 +63,25 @@ and serve their UIs.
 * **Variable interpolation is the validation mechanism.** Every required
   `.env` var is referenced with `${VAR:?...}` in `docker-compose.yml` so
   compose errors out on missing/empty values. Never replace these with silent
-  defaults for required config (secrets, versions, domain, proxy network).
+  defaults for required config (secrets, versions, domain). `NGINX_PROXY_NETWORK`
+  is the one optional exception: it has the spec default `web-proxy`
+  (`${NGINX_PROXY_NETWORK:-web-proxy}`).
 * **Hostnames are anchored once.** `x-hosts` at the top of
   `docker-compose.yml` defines `<service>.${BASE_DOMAIN}` for every service;
   services reference the anchors via `*sabnzbd-host` / `*prowlarr-host` /
   `*radarr-host` / `*sonarr-host` / `*qbittorrent-host` / `*jellyfin-host`
-  for `VIRTUAL_HOST`, `LETSENCRYPT_HOST`, and app-level hostname env vars; the
+  for `VIRTUAL_HOST`, `ACME_HOST`, and app-level hostname env vars; the
   derived `*-href` URL anchors feed the Homepage dashboard labels
   (`homepage.href`). Changing `BASE_DOMAIN` in `.env` moves the whole stack. Keep
   adding new services on the same pattern.
+* **Complete downstream proxy contract, variant-agnostic.** Every proxied
+  service declares `VIRTUAL_HOST`, `VIRTUAL_PORT`, `ACME_HOST`, and
+  `GEN_SELF_SIGNED_CERT` (wired from `<SERVICE>_GEN_SELF_SIGNED_CERT`, default
+  `false`). The proxy variant decides which TLS opt-in applies (internet-facing
+  honours `ACME_HOST`; LAN/self-signed honours `GEN_SELF_SIGNED_CERT`); the
+  service must not know or care. Never use the deprecated `LETSENCRYPT_*`
+  spellings (use `ACME_*`; the sole exception is `LETSENCRYPT_TEST` for the
+  staging CA) and never set `HTTPS_METHOD` — TLS behaviour is cluster policy.
 * **Services attach to an external network**, `nginx-proxy` (name from
   `NGINX_PROXY_NETWORK`), and publish only via `expose` — no host ports. The
   single exception is qbittorrent, which publishes the bittorrent peer port
@@ -120,6 +106,13 @@ and serve their UIs.
   running user).
 * **`env.example` is the tracked template; `.env` is hidden/ignored.**
   Do not gitignore `env.example`, do not track `.env`.
+* **Changelog discipline.** `CHANGELOG.md` follows
+  [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); add entries under
+  `## [Unreleased]` as changes are made (never batch them). Do not create
+  release sections on your own — only when the user asks for a release.
+* **`restart: unless-stopped` by default**, and every service carries Homepage
+  labels (`homepage.group` / `name` / `icon` / `href` / `description`) so the
+  dashboard card renders. See `README.md` and the service READMEs for detail.
 * **Shared media volume.** `MEDIA_VOLUME` switches `/media` between
   `media-local` (regular volume, default) and `media-nfs` (NFS mount);
   Jellyfin mounts it read-only (`:ro`), Radarr/Sonarr read-write

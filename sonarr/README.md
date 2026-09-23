@@ -39,7 +39,7 @@ The image records `ENV BASE_IMAGE=alpine:3.24` (what it was built `FROM`) and
 
 The container does not publish ports to the host. It joins the external
 `nginx-proxy` network and is reached through the existing `nginx-proxy` /
-Let's Encrypt sidecar using `VIRTUAL_HOST` — at `sonarr.<BASE_DOMAIN>` (see
+ACME companion using `VIRTUAL_HOST` — at `sonarr.<BASE_DOMAIN>` (see
 `BASE_DOMAIN` in `.env`).
 
 ### Environment variables
@@ -50,7 +50,8 @@ Let's Encrypt sidecar using `VIRTUAL_HOST` — at `sonarr.<BASE_DOMAIN>` (see
 | `TZ` | Container timezone |
 | `VIRTUAL_HOST` | Public hostname routed by nginx-proxy (`sonarr.<BASE_DOMAIN>`) |
 | `VIRTUAL_PORT` | Container port the proxy forwards to (`8989`) |
-| `LETSENCRYPT_HOST` | Certificate hostname (contact uses proxy `DEFAULT_EMAIL`) |
+| `ACME_HOST` | Certificate hostname; the certificate is requested from the cluster's ACME companion |
+| `GEN_SELF_SIGNED_CERT` | Self-signed certificate opt-in for the LAN/self-signed proxy variant; wired from `SONARR_GEN_SELF_SIGNED_CERT` (default `false`; set `true` for LAN/self-signed). Declared alongside `ACME_HOST` so the proxy variant decides which applies |
 | `SONARR_API_KEY` | API key (access token), seeded into `config.xml` on first start, shared with other services, and used by the container healthcheck (required) |
 | `SABNZBD_API_KEY` | SABnzbd API key, consumed on every (re)start to upsert the Sabnzbd download client via the Sonarr v3 API (required, existing var shared with SABnzbd) |
 | `QBT_WEBUI_USERNAME` / `QBT_WEBUI_PASSWORD` | qBittorrent WebUI credentials, consumed on every (re)start to upsert the QBittorrent download client via the Sonarr v3 API (existing vars shared with qBittorrent) |
