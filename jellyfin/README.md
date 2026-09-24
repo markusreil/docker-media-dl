@@ -11,9 +11,11 @@ instead of Alpine. Every other service stays on Alpine.
 Version scheme note: 10.11.x was the last 10.x release (no 10.12 ever
 existed); upstream then moved to 12.x, so this service tracks `12.1`.
 
-No hardware transcoding is configured: no `/dev/dri` passthrough and no
-discovery/published ports (7359/1900/8920). Software transcoding via the
-bundled ffmpeg 8 only.
+No hardware transcoding is configured by default: the base stack passes no
+`/dev/dri` devices and publishes no discovery ports (7359/1900/8920), so
+software transcoding via the bundled ffmpeg 8 is the default. Hardware
+transcoding is opt-in via the `docker-compose.hwaccel.yml` overlay (see
+[Hardware transcoding](#hardware-transcoding-optional-overlay) below).
 
 ## Build
 
@@ -52,7 +54,8 @@ Build context files live in `docker/` (`docker/entrypoint.sh` is copied to
 | Cache volume | `jellyfin-cache` → `/cache` (transcode/cache dir) |
 | Media volume | `/media:ro` from `MEDIA_VOLUME` — `media-local` (regular volume, default) or `media-nfs` (NFS library mount, shared with Radarr/Sonarr) |
 | Archived media volume | `/media-archived:ro` from `media-archived-nfs` (second NFS export on the same host, read-only; only with the `docker-compose.media-archived.yml` overlay) |
-| Privilege drop | `gosu` (Debian has no `su-exec`) |
+| GPU devices | `/dev/dri/renderD128` (VA-API) + `/dev/dri/card0` (DRM/Vulkan interop); only with the `docker-compose.hwaccel.yml` overlay |
+| Privilege drop | `gosu` (Debian has no `su-exec`); execs as `jellyfin` by username so mapped `/etc/group` groups survive |
 | ffmpeg | Bundled ffmpeg 8 at `/usr/lib/jellyfin-ffmpeg/ffmpeg` (`JELLYFIN_FFMPEG`) |
 | Web UI | `/jellyfin/jellyfin-web` (`JELLYFIN_WEB_DIR`) |
 | Entrypoint | `/usr/local/bin/entrypoint.sh` (from `docker/entrypoint.sh`, drops privileges, no config seeding) |
@@ -79,6 +82,7 @@ there is no per-service TLS-method override, TLS behaviour is cluster policy.
 | `JELLYFIN_API_KEY` | API key (access token), seeded into `jellyfin.db` `ApiKeys` on start and shared with peers; 32-char lowercase hex |
 | `MEDIA_NFS_HOST` / `MEDIA_NFS_PATH` / `MEDIA_NFS_VERS` | NFS server, export path (e.g. `/mnt/tank/media`) and version (default `4`); only used when `MEDIA_VOLUME=media-nfs` |
 | `MEDIA_ARCHIVED_NFS_PATH` | Optional second NFS export path on the same server (reuses `MEDIA_NFS_HOST`/`MEDIA_NFS_VERS`); only used with the `docker-compose.media-archived.yml` overlay, served read-only at `/media-archived` |
+| `JELLYFIN_VIDEO_GID` / `JELLYFIN_RENDER_GID` | Host GPU group GIDs (`video`, `render`; resolve with `getent group video render`); required only when the `docker-compose.hwaccel.yml` overlay is registered, mapped into the container's `/etc/group` by the entrypoint |
 
 ### Media source
 
@@ -94,6 +98,54 @@ read-only in Jellyfin, Radarr and Sonarr — but only when the
 `docker-compose.media-archived.yml` overlay is included (`-f`), since
 compose cannot conditionally omit mounts. The NFS mount itself carries `ro`,
 so the archive cannot be written to even by the read-write `/media` peers.
+
+### Hardware transcoding (optional overlay)
+
+Hardware transcoding is **opt-in**. The base stack passes no GPU devices, so
+hosts without a GPU (and software-only deployments) are unaffected. To enable
+it, register the overlay in `COMPOSE_FILE` in `.env`:
+
+```sh
+COMPOSE_FILE=docker-compose.yml:docker-compose.hwaccel.yml
+```
+
+The overlay (`docker-compose.hwaccel.yml`) adds two devices to the `jellyfin`
+service:
+
+* `/dev/dri/renderD128` — the VA-API render node used for hardware decode/encode.
+* `/dev/dri/card0` — the DRM node used for Vulkan interop (tone-mapping).
+
+`/dev/kfd` is intentionally **not** passed: it is only needed for the ROCm
+OpenCL runtime, and the AMD tone-mapping path uses Vulkan/libplacebo, which
+does not require OpenCL.
+
+The overlay requires `JELLYFIN_VIDEO_GID` and `JELLYFIN_RENDER_GID` in `.env`
+(compose fails fast without them when the overlay is registered). They are the
+host's `video` and `render` group GIDs — resolve them on the host with:
+
+```sh
+getent group video render      # e.g. video -> 44, render -> 109
+```
+
+The values in `env.example` (`44` / `109`) are Debian/Ubuntu examples; check
+your host (Arch/Fedora differ). `group_add` is deliberately not used: the
+entrypoint drops privileges with `gosu`, which resets supplementary groups, so
+the entrypoint instead maps the GIDs into the container's `/etc/group`, adds
+the `jellyfin` user to them, and execs `gosu jellyfin` (username form) so the
+memberships survive the drop. On hosts without the overlay these variables are
+unset and the mapping is a no-op.
+
+Host prerequisite: `/dev/dri` must exist on the host (amdgpu kernel driver +
+firmware installed). Without it, `docker compose up` fails because the device
+paths cannot be mounted.
+
+Enable it in the Jellyfin UI at **Dashboard > Playback > Transcoding**:
+
+* Hardware acceleration: **VA-API**.
+* VA-API device: `/dev/dri/renderD128`.
+* **Enable tone mapping** ON (HDR/DV), **VPP** OFF.
+* AMD tone-mapping uses the Vulkan/libplacebo path — no OpenCL runtime is
+  needed.
 
 ### Startup behaviour
 

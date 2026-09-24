@@ -90,7 +90,7 @@ empty required variable (see `docker-compose.yml`).
 
 | Variable | Purpose | Example |
 | --- | --- | --- |
-| `COMPOSE_FILE` | Compose file list (colon-separated on Linux/macOS); defaults to the base file, extend it to register the archived-library overlay | `docker-compose.yml` |
+| `COMPOSE_FILE` | Compose file list (colon-separated on Linux/macOS); defaults to the base file, extend it to register the archived-library and/or hardware-transcoding overlay | `docker-compose.yml` |
 | `TZ` | Container timezone | `Europe/Amsterdam` |
 | `PUID` / `PGID` | Host UID/GID owning downloaded files | `1000` / `1000` |
 | `NGINX_PROXY_NETWORK` | External nginx-proxy docker network (optional, defaults to `web-proxy`) | `web-proxy` |
@@ -111,6 +111,7 @@ empty required variable (see `docker-compose.yml`).
 | `MEDIA_VOLUME` | Shared media source switch (`media-local` default, or `media-nfs`); Jellyfin mounts `/media:ro`, Radarr/Sonarr mount `/media` read-write | `media-nfs` |
 | `MEDIA_NFS_HOST` / `MEDIA_NFS_PATH` / `MEDIA_NFS_VERS` | NFS server, export path, version (default `4`); only used when `MEDIA_VOLUME=media-nfs` | — |
 | `MEDIA_ARCHIVED_NFS_PATH` | Optional second NFS export path on the same host (reuses `MEDIA_NFS_HOST`/`MEDIA_NFS_VERS`); only used when the `docker-compose.media-archived.yml` overlay is registered via `COMPOSE_FILE` (see Storage) | `/mnt/tank/archive` |
+| `JELLYFIN_VIDEO_GID` / `JELLYFIN_RENDER_GID` | Host GPU `video`/`render` group GIDs (resolve with `getent group video render`); required only when the `docker-compose.hwaccel.yml` overlay is registered via `COMPOSE_FILE` (see Storage) | `44` / `109` |
 | `JELLYFIN_VERSION` | Jellyfin release version, tracks upstream `jellyfin/jellyfin` tag (build arg) | `12.1` |
 | `JELLYFIN_API_KEY` | Jellyfin API key (seeded into `jellyfin.db` on start) | 32-char hex |
 | `SABNZBD_GEN_SELF_SIGNED_CERT` | SABnzbd self-signed TLS opt-in (optional, default `false`); set `true` only for a LAN/self-signed proxy | `false` |
@@ -162,6 +163,29 @@ read-only at `/media-archived` in Jellyfin, Radarr and Sonarr. Without the
 overlay the variable is ignored entirely; with it, compose fails fast when
 it is missing or empty.
 
+### Hardware transcoding (optional overlay)
+
+Hardware transcoding is opt-in. The base stack passes no GPU devices, so hosts
+without a GPU are unaffected. To enable VA-API transcoding + Vulkan HDR/DV
+tone-mapping for Jellyfin, register `docker-compose.hwaccel.yml` in
+`COMPOSE_FILE` in `.env`:
+
+```sh
+COMPOSE_FILE=docker-compose.yml:docker-compose.hwaccel.yml
+```
+
+The overlay passes the host DRM nodes (`/dev/dri/renderD128` for VA-API,
+`/dev/dri/card0` for DRM/Vulkan interop) to the `jellyfin` service only, and
+requires the host's `video`/`render` group GIDs in `.env` as
+`JELLYFIN_VIDEO_GID` / `JELLYFIN_RENDER_GID` (resolve with
+`getent group video render`; compose fails fast without them when the overlay
+is registered). `group_add` is not used because Jellyfin's `gosu` privilege
+drop resets supplementary groups — the entrypoint maps the GIDs into the
+container's `/etc/group` instead. `/dev/kfd` is intentionally not passed (only
+needed for ROCm OpenCL; AMD tone-mapping uses Vulkan/libplacebo). See
+[jellyfin/README.md](jellyfin/README.md) for the UI settings and host
+prerequisite.
+
 Both entrypoints are write-once: they seed a minimal config on **first start
 only** (API keys, hostnames, auth mode) and never overwrite an existing one.
 To reseed, remove the service and its volume, then recreate.
@@ -206,6 +230,9 @@ docker-compose.yml     single compose file (services, hosts, networks, volumes)
 docker-compose.media-archived.yml
                        optional overlay: archived-library volume + mounts
                        (register via COMPOSE_FILE to serve /media-archived, else ignored)
+docker-compose.hwaccel.yml
+                       optional overlay: Jellyfin GPU devices + group mapping
+                       (register via COMPOSE_FILE to enable HW transcoding, else ignored)
 env.example            tracked example configuration (copy to .env, hidden/ignored)
 .env                   local configuration (secrets) — hidden, gitignored, never committed
 CHANGELOG.md           notable changes, Keep a Changelog (`## [Unreleased]` at the top)

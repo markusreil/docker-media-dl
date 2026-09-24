@@ -1,0 +1,34 @@
+# Optional hardware-acceleration overlay for the media-dl project.
+#
+# Compose has no conditional device passthrough, so the GPU devices live here
+# instead of in docker-compose.yml: the base stack works with or without it
+# (and on hosts with no GPU).
+#
+# Usage: register it via COMPOSE_FILE in .env (applies to every compose
+# command, no `-f` needed):
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.hwaccel.yml
+# Equivalent to `docker compose -f docker-compose.yml
+# -f docker-compose.hwaccel.yml <command>` on any command.
+#
+# Requires JELLYFIN_VIDEO_GID and JELLYFIN_RENDER_GID in .env (compose fails
+# fast without them when this file is used). Resolve them on the host with:
+#   getent group video render
+#
+# Effect: Jellyfin gets the host DRM nodes (/dev/dri/renderD128 for VA-API,
+# /dev/dri/card0 for DRM/Vulkan interop) and the entrypoint maps the host
+# video/render GIDs into the container so the unprivileged user can open them.
+# Enable hardware transcoding in the UI: Dashboard > Playback > Transcoding
+# (VA-API, device /dev/dri/renderD128, tone mapping on). See jellyfin/README.md.
+
+services:
+  jellyfin:
+    environment:
+      # Host GPU group GIDs, consumed by the entrypoint (see
+      # jellyfin/docker/entrypoint.sh). group_add is deliberately NOT used:
+      # gosu resets supplementary groups on the privilege drop, so the mapping
+      # must be done in the container's /etc/group before exec.
+      JELLYFIN_VIDEO_GID: ${JELLYFIN_VIDEO_GID:?JELLYFIN_VIDEO_GID is required when the hwaccel overlay is enabled (see .env)}
+      JELLYFIN_RENDER_GID: ${JELLYFIN_RENDER_GID:?JELLYFIN_RENDER_GID is required when the hwaccel overlay is enabled (see .env)}
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+      - /dev/dri/card0:/dev/dri/card0

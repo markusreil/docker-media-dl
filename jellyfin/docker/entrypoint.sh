@@ -19,6 +19,29 @@ if [ "$(id -u)" = "0" ]; then
         useradd -u "$PUID" -g "$PGID" -d /config -s /usr/sbin/nologin -M jellyfin 2>/dev/null || true
     fi
 
+    # Map host GPU group GIDs (set by the optional docker-compose.hwaccel.yml
+    # overlay) into the container and add the unprivileged user to them, so it
+    # can open group-restricted DRM nodes (e.g. /dev/dri/card0 is root:video
+    # 660). Docker's group_add cannot be used: gosu resets supplementary groups
+    # on the privilege drop, so the mapping must exist in /etc/group first.
+    # Unset vars = no-op (base stack without the overlay).
+    add_host_group() {
+        _gid="$1"; _base="$2"
+        [ -n "$_gid" ] || return 0
+        _grp="$(getent group "$_gid" | cut -d: -f1)"
+        if [ -z "$_grp" ]; then
+            _grp="$_base"; _i=0
+            while getent group "$_grp" >/dev/null 2>&1; do
+                _i=$((_i + 1)); _grp="${_base}${_i}"
+            done
+            groupadd -g "$_gid" "$_grp" 2>/dev/null || true
+        fi
+        id -nG jellyfin 2>/dev/null | tr ' ' '\n' | grep -qxF "$_grp" \
+            || usermod -aG "$_grp" jellyfin 2>/dev/null || true
+    }
+    add_host_group "${JELLYFIN_VIDEO_GID:-}" gpu-video
+    add_host_group "${JELLYFIN_RENDER_GID:-}" gpu-render
+
     mkdir -p /config/config /config/log /cache /media
 
     # No config seeding: Jellyfin ships a stock first-run wizard that runs in
@@ -52,8 +75,10 @@ if [ "$(id -u)" = "0" ]; then
         echo "jellyfin: skipping API key seed (JELLYFIN_API_KEY unset)"
     fi
 
-    # Extra CMD/compose args pass through as "$@".
-    exec gosu "$PUID:$PGID" /jellyfin/jellyfin --datadir /config --configdir /config/config --logdir /config/log --cachedir /cache "$@"
+    # Extra CMD/compose args pass through as "$@". Exec by username (not
+    # "$PUID:$PGID") so the supplementary groups mapped into /etc/group above
+    # are applied on the privilege drop.
+    exec gosu jellyfin /jellyfin/jellyfin --datadir /config --configdir /config/config --logdir /config/log --cachedir /cache "$@"
 fi
 
 exec /jellyfin/jellyfin --datadir /config --configdir /config/config --logdir /config/log --cachedir /cache "$@"

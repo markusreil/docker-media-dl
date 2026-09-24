@@ -19,8 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `COMPOSE_FILE` in `.env` / `env.example`, defaulting to the base
   `docker-compose.yml`. Listing the optional archived-library overlay there
   registers it for every compose command, replacing per-command `-f` flags.
+- Optional `docker-compose.hwaccel.yml` overlay enabling Jellyfin hardware
+  transcoding: passes the host DRM nodes (`/dev/dri/renderD128` for VA-API,
+  `/dev/dri/card0` for DRM/Vulkan interop) to `jellyfin` only, registered via
+  `COMPOSE_FILE`.
+- `JELLYFIN_VIDEO_GID` / `JELLYFIN_RENDER_GID` `.env` variables (host GPU
+  group GIDs), required only when the hwaccel overlay is registered.
+- Jellyfin entrypoint GPU-group mapping: maps the host GIDs into the
+  container's `/etc/group` and adds the `jellyfin` user to them, so the
+  unprivileged process can open group-restricted DRM nodes.
 
 ### Changed
+
+- Jellyfin entrypoint now execs `gosu jellyfin` (username form) instead of
+  `gosu "$PUID:$PGID"`, so the mapped `/etc/group` supplementary groups
+  survive the privilege drop (`group_add` is ineffective through `gosu`).
 
 - Proxy contract: replaced the deprecated `LETSENCRYPT_HOST` with the `ACME_HOST`
   spelling on all services (spec-mandated `ACME_*` naming); every service now

@@ -11,11 +11,11 @@ playback, deployed as a single `docker compose` project named `media-dl`.
 
 Core requirements (from the original spec):
 
-* Single compose file for all containers (one documented exception:
-  `docker-compose.media-archived.yml`, an optional overlay that adds the
-  archived-library volume/mounts — compose has no conditional mounts, so
-  optionality needs a second file, registered by adding it to `COMPOSE_FILE`
-  in `.env`).
+* Single compose file for all containers (two documented exceptions, both
+  optional overlays registered by adding them to `COMPOSE_FILE` in `.env`):
+  `docker-compose.media-archived.yml` adds the archived-library volume/mounts,
+  and `docker-compose.hwaccel.yml` adds Jellyfin's GPU devices/group mapping —
+  compose has no conditional mounts/devices, so optionality needs extra files.
 * One compose project, cluster name `media-dl`.
 * Integrates with an existing external nginx-proxy (reverse proxy + ACME
   companion) on a shared docker network.
@@ -209,6 +209,24 @@ and serve their UIs.
   container always listens on 6881.
 * Healthcheck `GET /` returns 200 unauthenticated.
 * Write-once seeding, same reseed procedure as the other services.
+
+## Jellyfin specifics (`jellyfin/`)
+
+* Device passthrough lives in the optional `docker-compose.hwaccel.yml`
+  overlay, never in the base `docker-compose.yml`: the base stack must work on
+  hosts with no GPU. The overlay passes `/dev/dri/renderD128` (VA-API) and
+  `/dev/dri/card0` (DRM/Vulkan interop) to `jellyfin` only.
+* The GPU group GIDs are `.env` variables (`JELLYFIN_VIDEO_GID` /
+  `JELLYFIN_RENDER_GID`, required only when the overlay is registered, so
+  Ansible can supply them per host).
+* `group_add` is deliberately NOT used: Jellyfin's entrypoint drops privileges
+  with `gosu`, which resets supplementary groups. Instead the entrypoint maps
+  the host GIDs into the container's `/etc/group` and execs `gosu jellyfin`
+  (username form) so the memberships survive the drop.
+* AMD tone-mapping uses the Vulkan/libplacebo path — no OpenCL runtime needed.
+  `/dev/kfd` is intentionally not passed (only needed for ROCm OpenCL).
+* The entrypoint is otherwise a directory-only, no-seed entrypoint; the API key
+  is the one exception (seeded into `jellyfin.db`).
 
 ## Testing / review checklist
 
